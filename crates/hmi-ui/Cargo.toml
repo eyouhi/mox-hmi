@@ -1,0 +1,43 @@
+[package]
+name = "mox-hmi-ui"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+hmi-core = { path = "../hmi-core" }
+hmi-control-protocol = { path = "../hmi-control-protocol" }
+dioxus = { version = "=0.8.0-alpha.3", default-features = false, features = [
+  "minimal",
+  "asset",
+  "document",
+] }
+serde_json.workspace = true
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+web-sys = { version = "0.3", features = [
+  "Window",
+  "WebSocket",
+  "Location",
+  "MessageEvent",
+  "CloseEvent",
+  "Event",
+  "EventTarget",
+  "Navigator",
+  "Storage",
+  "Document",
+  "Element",
+  "Node",
+  "HtmlAnchorElement",
+  "HtmlInputElement",
+  "Blob",
+  "BlobPropertyBag",
+  "Url",
+  "console",
+] }
+js-sys = "0.3"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+gloo-timers = { version = "0.3", features = ["futures"] }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+futures-timer = "3"

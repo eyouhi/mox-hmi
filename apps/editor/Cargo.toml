@@ -1,0 +1,62 @@
+[package]
+name = "mox-hmi-editor"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+bevy = { version = "0.20.1", default-features = false, features = [
+  "std",
+  "async_executor",
+  "bevy_asset",
+  "bevy_log",
+  "bevy_state",
+  "bevy_winit",
+  "bevy_window",
+  "bevy_gilrs",
+  "gamepad",
+  "multi_threaded",
+  "webgpu",
+  "default_font",
+  "2d_bevy_render",
+  "3d_bevy_render",
+  "bevy_picking",
+  "mesh_picking",
+  "bevy_scene",
+  "bevy_gizmos_render",
+  "png",
+] }
+anyrender = "0.14.0"
+blitz-dom = { version = "=0.3.0-beta.4", features = ["custom-widget"] }
+blitz-traits = "=0.3.0-beta.4"
+dioxus = { version = "=0.8.0-alpha.3", default-features = false, features = [
+  "minimal",
+  "asset",
+  "document",
+] }
+dioxus-native = { version = "=0.8.0-alpha.3", default-features = false, features = [
+  "accessibility",
+  "svg",
+  "system-fonts",
+  "vello",
+] }
+hmi-core = { path = "../../crates/hmi-core" }
+hmi-control-protocol = { path = "../../crates/hmi-control-protocol" }
+keyboard-types = "0.8"
+mox-hmi-control = { path = "../control" }
+mox-hmi-studio = { path = "../studio" }
+mox-hmi-ui = { path = "../../crates/hmi-ui" }
+peniko = "0.6.1"
+serde_json.workspace = true
+tokio = { version = "1", features = ["net", "rt-multi-thread", "sync", "time"] }
+wgpu = "30"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+dispatch2 = "0.3.1"
+objc2 = "0.6.5"
+objc2-app-kit = { version = "0.3.2", features = [
+  "NSApplication",
+  "NSHapticFeedback",
+  "NSRunningApplication",
+  "NSSound",
+] }
+objc2-foundation = { version = "0.3.2", features = ["NSString"] }

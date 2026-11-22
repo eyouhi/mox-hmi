@@ -1,0 +1,223 @@
+use super::input::{self, GamepadState, PadButton};
+use super::plugin::{CachedProject, HmiCameras};
+use bevy::input::mouse::MouseScrollUnit;
+use bevy::input::mouse::{AccumulatedMouseMotion, MouseWheel};
+use bevy::prelude::*;
+use bevy::window::PrimaryWindow;
+use hmi_core::{DeviceModel, Screen};
+
+#[derive(Resource, Debug, Clone)]
+pub struct OrbitCamera {
+    pub yaw: f32,
+    pub pitch: f32,
+    pub distance: f32,
+    pub focus: Vec3,
+}
+
+impl Default for OrbitCamera {
+    fn default() -> Self {
+        Self {
+            yaw: -0.65,
+            pitch: 0.48,
+            distance: 13.0,
+            focus: Vec3::new(0.0, 1.4, 0.0),
+        }
+    }
+}
+
+impl OrbitCamera {
+    pub fn reset(&mut self) {
+        *self = Self::default();
+    }
+
+    pub fn apply(&self, transform: &mut Transform) {
+        let horizontal = self.distance * self.pitch.cos();
+        transform.translation = self.focus
+            + Vec3::new(
+                horizontal * self.yaw.sin(),
+                self.distance * self.pitch.sin(),
+                horizontal * self.yaw.cos(),
+            );
+        transform.look_at(self.focus, Vec3::Y);
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn orbit_system(
+    cached: Res<CachedProject>,
+    cameras: Res<HmiCameras>,
+    time: Res<Time>,
+    window_query: Query<&Window, With<PrimaryWindow>>,
+    keyboard: Res<ButtonInput<KeyCode>>,
+    mouse_buttons: Res<ButtonInput<MouseButton>>,
+    mouse_motion: Res<AccumulatedMouseMotion>,
+    pad: Res<GamepadState>,
+    mut wheel_events: MessageReader<MouseWheel>,
+    mut orbit: ResMut<OrbitCamera>,
+    mut camera_query: Query<&mut Transform, With<Camera3d>>,
+    mut reset_revision: Local<u32>,
+) {
+    if !cached.is_three_d() {
+        for event in wheel_events.read() {
+            let _ = event;
+        }
+        return;
+    }
+
+    let current_reset = crate::bridge::camera_reset_revision();
+    if current_reset != *reset_revision {
+        *reset_revision = current_reset;
+        orbit.reset();
+    }
+
+    if input::keyboard_input_enabled() && !input::command_modifier_pressed(&keyboard) {
+        if keyboard.pressed(KeyCode::ArrowLeft) {
+            orbit.yaw += 0.04;
+        }
+        if keyboard.pressed(KeyCode::ArrowRight) {
+            orbit.yaw -= 0.04;
+        }
+        if keyboard.pressed(KeyCode::ArrowUp) {
+            orbit.pitch = (orbit.pitch + 0.03).clamp(-0.15, 1.25);
+        }
+        if keyboard.pressed(KeyCode::ArrowDown) {
+            orbit.pitch = (orbit.pitch - 0.03).clamp(-0.15, 1.25);
+        }
+        if keyboard.pressed(KeyCode::Equal) || keyboard.pressed(KeyCode::NumpadAdd) {
+            orbit.distance = (orbit.distance * 0.97).clamp(6.0, 24.0);
+        }
+        if keyboard.pressed(KeyCode::Minus) || keyboard.pressed(KeyCode::NumpadSubtract) {
+            orbit.distance = (orbit.distance * 1.03).clamp(6.0, 24.0);
+        }
+        if keyboard.just_pressed(KeyCode::Home) {
+            orbit.reset();
+        }
+        if keyboard.just_pressed(KeyCode::KeyF) {
+            frame_selected(&cached, &mut orbit);
+        }
+    }
+
+    if input::gamepad_input_enabled() && pad.connected && !crate::bridge::controller_tuning_active()
+    {
+        let dt = time.delta_secs().min(0.05);
+        let stick = pad.right_stick();
+        if stick.length_squared() > 0.0 {
+            if pad.pressed(PadButton::L3) {
+                let mut basis = Transform::default();
+                orbit.apply(&mut basis);
+                let right = basis.right().as_vec3();
+                let up = basis.up().as_vec3();
+                let speed = orbit.distance * 0.9 * dt;
+                orbit.focus -= right * stick.x * speed;
+                orbit.focus += up * stick.y * speed;
+            } else {
+                orbit.yaw -= stick.x * 1.8 * dt;
+                orbit.pitch = (orbit.pitch + stick.y * 1.25 * dt).clamp(-0.15, 1.25);
+            }
+        }
+        let zoom = pad.right_trigger() - pad.left_trigger();
+        if zoom.abs() > 0.01 {
+            orbit.distance = (orbit.distance * (-zoom * 1.8 * dt).exp()).clamp(6.0, 24.0);
+        }
+        if pad.just_pressed(PadButton::Cross) {
+            frame_selected(&cached, &mut orbit);
+        }
+    }
+
+    let delta = mouse_motion.delta;
+    let pointer_on_canvas = window_query
+        .single()
+        .ok()
+        .and_then(|window| window.cursor_position())
+        .is_some_and(input::pointer_over_canvas);
+    let orbit_modifier = keyboard.pressed(KeyCode::AltLeft) || keyboard.pressed(KeyCode::AltRight);
+    if pointer_on_canvas
+        && mouse_buttons.pressed(MouseButton::Left)
+        && orbit_modifier
+        && delta.length_squared() > 0.0
+    {
+        orbit.yaw -= delta.x * 0.006;
+        orbit.pitch = (orbit.pitch + delta.y * 0.005).clamp(-0.15, 1.25);
+    }
+
+    if let Ok(mut transform) = camera_query.get_mut(cameras.three_d) {
+        if pointer_on_canvas
+            && mouse_buttons.pressed(MouseButton::Middle)
+            && delta.length_squared() > 0.0
+        {
+            let right = transform.right().as_vec3();
+            let up = transform.up().as_vec3();
+            let distance = orbit.distance;
+            orbit.focus -= right * delta.x * distance * 0.0015;
+            orbit.focus += up * delta.y * distance * 0.0015;
+        }
+
+        for event in wheel_events.read() {
+            if !pointer_on_canvas {
+                continue;
+            }
+            let zoom_requested =
+                event.unit == MouseScrollUnit::Line || input::zoom_modifier_pressed(&keyboard);
+            if zoom_requested {
+                let sensitivity = if event.unit == MouseScrollUnit::Line {
+                    0.12
+                } else {
+                    0.003
+                };
+                orbit.distance = (orbit.distance * (-event.y * sensitivity).exp()).clamp(6.0, 24.0);
+            } else if event.x.abs() > f32::EPSILON || event.y.abs() > f32::EPSILON {
+                let right = transform.right().as_vec3();
+                let up = transform.up().as_vec3();
+                let scale = orbit.distance * 0.0015;
+                orbit.focus -= right * event.x * scale;
+                orbit.focus -= up * event.y * scale;
+            }
+        }
+
+        orbit.apply(&mut transform);
+    }
+}
+
+fn frame_selected(cached: &CachedProject, orbit: &mut OrbitCamera) {
+    let Some(project) = cached.project.as_ref() else {
+        return;
+    };
+    let Some(screen_id) = cached.screen_id.as_ref() else {
+        return;
+    };
+    let Some(Screen::ThreeD { nodes, .. }) = project.screen(screen_id) else {
+        return;
+    };
+    let selected = crate::bridge::selected_nodes();
+    let selected_nodes = selected
+        .iter()
+        .filter_map(|node_id| nodes.iter().find(|node| &node.id == node_id))
+        .collect::<Vec<_>>();
+    if selected_nodes.is_empty() {
+        return;
+    }
+    let mut min = Vec3::splat(f32::INFINITY);
+    let mut max = Vec3::splat(f32::NEG_INFINITY);
+    let mut span = 0.0_f32;
+    for node in &selected_nodes {
+        let position = Vec3::from_array(node.position);
+        min = min.min(position);
+        max = max.max(position);
+        span = span.max(model_span(&node.model));
+    }
+    let center = (min + max) * 0.5;
+    let spread = (max - min).length();
+    orbit.focus = center;
+    orbit.distance = ((span.max(spread * 1.4)) * 2.2).clamp(6.0, 24.0);
+}
+
+fn model_span(model: &DeviceModel) -> f32 {
+    match model {
+        DeviceModel::Ahu { size, .. }
+        | DeviceModel::Fan { size, .. }
+        | DeviceModel::Pump { size, .. } => size[0].max(size[1]).max(size[2]),
+        DeviceModel::Duct { length, .. } | DeviceModel::Pipe { length, .. } => *length,
+        DeviceModel::Valve { size, .. } => *size * 2.0,
+        DeviceModel::Glb { .. } => 3.0,
+    }
+}

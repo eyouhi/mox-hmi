@@ -1,0 +1,12 @@
+[application]
+name = "mox-hmi-studio"
+
+[web.app]
+title = "MOX HMI Studio"
+
+[web.resource]
+style = []
+script = []
+
+[web.resource.dev]
+script = []

@@ -1,0 +1,50 @@
+[package]
+name = "mox-spike-dioxus-bevy-native"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[dependencies]
+anyrender = "0.14.0"
+bevy = { version = "0.20.1", default-features = false, features = [
+  "std",
+  "async_executor",
+  "bevy_asset",
+  "bevy_log",
+  "bevy_state",
+  "bevy_winit",
+  "bevy_window",
+  "bevy_gilrs",
+  "gamepad",
+  "multi_threaded",
+  "webgpu",
+  "default_font",
+  "2d_bevy_render",
+  "3d_bevy_render",
+  "bevy_picking",
+  "mesh_picking",
+  "bevy_scene",
+  "bevy_gizmos_render",
+  "png",
+] }
+blitz-dom = { version = "=0.3.0-beta.4", features = ["custom-widget"] }
+blitz-traits = "=0.3.0-beta.4"
+dioxus = "=0.8.0-alpha.3"
+dioxus-native = { version = "=0.8.0-alpha.3", default-features = false, features = [
+  "accessibility",
+  "svg",
+  "system-fonts",
+  "vello",
+] }
+peniko = "0.6.1"
+wgpu = "30"
+
+[profile.dev]
+opt-level = 1
+debug = 1
+
+[profile.dev.package."*"]
+opt-level = 2
+debug = false

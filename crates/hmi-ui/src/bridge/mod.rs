@@ -1,0 +1,1187 @@
+use dioxus::prelude::*;
+use hmi_core::{
+    BatchCommandResult, ButtonAction, CommandResult, DeviceNode, EditorCommand, EditorSession,
+    HmiError, ProjectDocument, Rect, Screen, TagSnapshot, TagValue, UiNode, bas_demo,
+    export_filename, from_json, to_json, unique_node_id,
+};
+#[cfg(not(target_arch = "wasm32"))]
+use std::sync::{
+    OnceLock,
+    atomic::{AtomicBool, Ordering},
+};
+use std::{
+    cell::{Cell, RefCell},
+    collections::HashSet,
+    rc::Rc,
+};
+
+#[cfg(not(target_arch = "wasm32"))]
+static NATIVE_TEXT_ENTRY_FOCUSED: AtomicBool = AtomicBool::new(false);
+#[cfg(not(target_arch = "wasm32"))]
+static NATIVE_UI_CAPTURES_POINTER: AtomicBool = AtomicBool::new(false);
+#[cfg(not(target_arch = "wasm32"))]
+static NATIVE_POINTER_ON_CANVAS: AtomicBool = AtomicBool::new(false);
+#[cfg(not(target_arch = "wasm32"))]
+static NATIVE_HAPTIC_HANDLER: OnceLock<fn()> = OnceLock::new();
+
+pub mod storage;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WorkspaceMode {
+    Edit,
+    Run,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SaveStatus {
+    Saved,
+    Pending,
+    Failed,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NoticeLevel {
+    Info,
+    Warning,
+    Error,
+}
+
+impl NoticeLevel {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            NoticeLevel::Info => "info",
+            NoticeLevel::Warning => "warning",
+            NoticeLevel::Error => "error",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Notice {
+    pub level: NoticeLevel,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct GamepadStatus {
+    pub connected: bool,
+    pub id: String,
+}
+
+impl GamepadStatus {
+    pub fn is_dualsense(&self) -> bool {
+        let id = self.id.to_ascii_lowercase();
+        id.contains("dualsense") || id.contains("ps5 controller") || id.contains("playstation 5")
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ControllerTuningHud {
+    pub label: String,
+    pub value: f32,
+    pub step: f32,
+    pub index: usize,
+    pub count: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EngineStatus {
+    Starting,
+    Ready,
+    Failed(String),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SceneLabel3D {
+    pub node_id: String,
+    pub title: String,
+    pub value: String,
+    pub left_pct: f32,
+    pub top_pct: f32,
+    pub point_left_pct: f32,
+    pub point_top_pct: f32,
+    pub visible: bool,
+}
+
+pub static DOCUMENT_REVISION: GlobalSignal<u64> = Signal::global(|| 1);
+pub static TAG_REVISION: GlobalSignal<u64> = Signal::global(|| 1);
+pub static SELECTED_NODE: GlobalSignal<Option<String>> = Signal::global(|| None);
+pub static SELECTED_NODES: GlobalSignal<Vec<String>> = Signal::global(Vec::new);
+pub static ACTIVE_SCREEN: GlobalSignal<Option<String>> = Signal::global(|| None);
+pub static WORKSPACE_MODE: GlobalSignal<WorkspaceMode> = Signal::global(|| WorkspaceMode::Edit);
+pub static NOTICE_REVISION: GlobalSignal<u64> = Signal::global(|| 0);
+pub static ENGINE_STATUS: GlobalSignal<EngineStatus> = Signal::global(|| EngineStatus::Starting);
+pub static SAVE_STATUS: GlobalSignal<SaveStatus> = Signal::global(|| SaveStatus::Saved);
+pub static VIEW_LABELS_3D: GlobalSignal<Vec<SceneLabel3D>> = Signal::global(Vec::new);
+pub static CAMERA_RESET_REVISION: GlobalSignal<u32> = Signal::global(|| 0);
+pub static WEBGPU_READY: GlobalSignal<Option<bool>> = Signal::global(|| None);
+pub static FIELD_ERROR_ANNOUNCEMENT: GlobalSignal<Option<String>> = Signal::global(|| None);
+pub static RUNTIME_ONLY: GlobalSignal<bool> = Signal::global(|| false);
+pub static GUIDE_OPEN: GlobalSignal<bool> = Signal::global(|| false);
+pub static GAMEPAD_STATUS: GlobalSignal<GamepadStatus> = Signal::global(GamepadStatus::default);
+pub static CONTROLLER_TUNING_HUD: GlobalSignal<Option<ControllerTuningHud>> =
+    Signal::global(|| None);
+
+thread_local! {
+    static SESSION: RefCell<Option<Rc<RefCell<EditorSession>>>> = const { RefCell::new(None) };
+    static NOTICE: RefCell<Option<Notice>> = const { RefCell::new(None) };
+    static CLIPBOARD: RefCell<Option<CanvasClipboard>> = const { RefCell::new(None) };
+    static PASTE_SERIAL: Cell<u32> = const { Cell::new(0) };
+    static VIEW_CENTER_2D: Cell<[f32; 2]> = const { Cell::new([800.0, 450.0]) };
+    static ZOOM_2D: Cell<f32> = const { Cell::new(1.0) };
+    static SCENE_SHORTCUTS_SUPPRESSED_UNTIL_MS: Cell<f64> = const { Cell::new(0.0) };
+    static UI_RUNTIME_PINNED: Cell<bool> = const { Cell::new(false) };
+    static SESSION_NEEDS_SAVE: Cell<bool> = const { Cell::new(false) };
+}
+
+#[derive(Debug, Clone)]
+enum CanvasClipboard {
+    TwoD(Vec<UiNode>),
+    ThreeD(Vec<DeviceNode>),
+}
+
+pub fn suppress_scene_shortcuts_for(duration_ms: f64) {
+    let deadline = now_ms() + duration_ms.max(0.0);
+    SCENE_SHORTCUTS_SUPPRESSED_UNTIL_MS.with(|until| {
+        if deadline > until.get() {
+            until.set(deadline);
+        }
+    });
+}
+
+pub fn scene_shortcuts_suppressed() -> bool {
+    SCENE_SHORTCUTS_SUPPRESSED_UNTIL_MS.with(|until| now_ms() < until.get())
+}
+
+pub fn now_ms() -> f64 {
+    #[cfg(target_arch = "wasm32")]
+    {
+        js_sys::Date::now()
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|duration| duration.as_secs_f64() * 1_000.0)
+            .unwrap_or(0.0)
+    }
+}
+
+pub fn initialize() -> Result<(), String> {
+    #[cfg(not(target_arch = "wasm32"))]
+    ensure_native_runtime();
+    #[cfg(target_arch = "wasm32")]
+    ensure_web_runtime();
+    if SESSION.with(|slot| slot.borrow().is_some()) {
+        publish_session_state();
+        return Ok(());
+    }
+    SESSION.with(|slot| {
+        let (project, warning, needs_save) = match storage::load_raw() {
+            Ok(Some(raw)) => match from_json(&raw) {
+                Ok(project) => (project, None, false),
+                Err(error) => (
+                    bas_demo(),
+                    Some(format!("自动保存工程无效，已加载内置示例：{error}")),
+                    true,
+                ),
+            },
+            Ok(None) => (bas_demo(), None, true),
+            Err(error) => (
+                bas_demo(),
+                Some(format!("localStorage 不可用，工程只保存在内存中：{error}")),
+                true,
+            ),
+        };
+        SESSION_NEEDS_SAVE.with(|flag| flag.set(needs_save));
+        let session = EditorSession::new(project).map_err(|errors| {
+            errors
+                .into_iter()
+                .map(|error| error.to_string())
+                .collect::<Vec<_>>()
+                .join("; ")
+        })?;
+        let startup = session.project().startup_screen.clone();
+        *slot.borrow_mut() = Some(Rc::new(RefCell::new(session)));
+        *DOCUMENT_REVISION.write() = 1;
+        *TAG_REVISION.write() = 1;
+        *ACTIVE_SCREEN.write() = Some(startup);
+        let runtime_only = runtime_mode_requested();
+        *RUNTIME_ONLY.write() = runtime_only;
+        if runtime_only {
+            *WORKSPACE_MODE.write() = WorkspaceMode::Run;
+        }
+        *SAVE_STATUS.write() = if needs_save {
+            SaveStatus::Pending
+        } else {
+            SaveStatus::Saved
+        };
+        if let Some(message) = warning {
+            set_notice(NoticeLevel::Warning, message);
+        }
+        Ok(())
+    })
+}
+
+/// Pin the runtime of the live UI so Bevy callbacks resolve the same global
+/// signals that the components read. Call this from the root component.
+pub fn pin_ui_runtime() {
+    UI_RUNTIME_PINNED.with(|pinned| {
+        if pinned.get() {
+            return;
+        }
+        pinned.set(true);
+        let guard = dioxus::core::RuntimeGuard::new(dioxus::core::Runtime::current());
+        std::mem::forget(guard);
+    });
+}
+
+fn publish_session_state() {
+    let Ok((revision, startup_screen)) = with_session(|session| {
+        (
+            session.document_revision(),
+            session.project().startup_screen.clone(),
+        )
+    }) else {
+        return;
+    };
+    *DOCUMENT_REVISION.write() = revision;
+    *TAG_REVISION.write() = 1;
+    *ACTIVE_SCREEN.write() = Some(startup_screen);
+    set_selection_signals(Vec::new());
+    *RUNTIME_ONLY.write() = runtime_mode_requested();
+    *WORKSPACE_MODE.write() = if runtime_mode_requested() {
+        WorkspaceMode::Run
+    } else {
+        WorkspaceMode::Edit
+    };
+    *SAVE_STATUS.write() = if SESSION_NEEDS_SAVE.with(Cell::get) {
+        SaveStatus::Pending
+    } else {
+        SaveStatus::Saved
+    };
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn ensure_native_runtime() {
+    use std::sync::Once;
+
+    static INIT: Once = Once::new();
+    INIT.call_once(|| {
+        fn root() -> Element {
+            rsx! {}
+        }
+
+        let mut dom = dioxus::core::VirtualDom::new(root);
+        let _ = dom.rebuild_in_place();
+        let runtime = dom.runtime();
+        let guard = dioxus::core::RuntimeGuard::new(runtime);
+        std::mem::forget(dom);
+        std::mem::forget(guard);
+    });
+}
+
+/// Keep the Web UI runtime on the thread stack for the Bevy render loop.
+#[cfg(target_arch = "wasm32")]
+fn ensure_web_runtime() {
+    pin_ui_runtime();
+}
+
+fn with_session<T>(f: impl FnOnce(&mut EditorSession) -> T) -> Result<T, String> {
+    SESSION.with(|slot| {
+        let session = slot
+            .borrow()
+            .as_ref()
+            .cloned()
+            .ok_or_else(|| "EditorSession 未初始化".to_string())?;
+        let mut session = session.borrow_mut();
+        Ok(f(&mut session))
+    })
+}
+
+pub fn project() -> ProjectDocument {
+    with_session(|session| session.project().clone()).unwrap_or_else(|_| bas_demo())
+}
+
+pub fn tag_snapshot() -> TagSnapshot {
+    with_session(|session| session.tag_snapshot().clone()).unwrap_or_default()
+}
+
+pub fn document_revision() -> u64 {
+    *DOCUMENT_REVISION.read()
+}
+
+pub fn tag_revision() -> u64 {
+    *TAG_REVISION.read()
+}
+
+pub fn execute(command: EditorCommand) -> Result<CommandResult, HmiError> {
+    let result =
+        with_session(|session| session.execute(command)).map_err(HmiError::InvalidCommand)??;
+    after_document_change(result.document_revision);
+    Ok(result)
+}
+
+pub fn execute_batch(commands: Vec<EditorCommand>) -> Result<BatchCommandResult, HmiError> {
+    let result = with_session(|session| session.execute_batch(commands))
+        .map_err(HmiError::InvalidCommand)??;
+    after_document_change(result.document_revision);
+    Ok(result)
+}
+
+pub fn undo() -> bool {
+    let changed = with_session(EditorSession::undo).unwrap_or(false);
+    if changed {
+        after_history_change();
+    }
+    changed
+}
+
+pub fn redo() -> bool {
+    let changed = with_session(EditorSession::redo).unwrap_or(false);
+    if changed {
+        after_history_change();
+    }
+    changed
+}
+
+pub fn can_undo() -> bool {
+    with_session(|session| session.can_undo()).unwrap_or(false)
+}
+
+pub fn can_redo() -> bool {
+    with_session(|session| session.can_redo()).unwrap_or(false)
+}
+
+fn after_history_change() {
+    let revision = with_session(|session| session.document_revision()).unwrap_or(1);
+    after_document_change(revision);
+}
+
+fn after_document_change(revision: u64) {
+    *DOCUMENT_REVISION.write() = revision;
+    *TAG_REVISION.write() += 1;
+    *SAVE_STATUS.write() = SaveStatus::Pending;
+    prune_selection();
+}
+
+fn prune_selection() {
+    let current = project();
+    let active = active_screen().unwrap_or_else(|| current.startup_screen.clone());
+    let Some(screen) = current.screen(&active) else {
+        set_selection_signals(Vec::new());
+        return;
+    };
+    let mut valid = HashSet::new();
+    match screen {
+        Screen::TwoD { nodes, .. } => valid.extend(nodes.iter().map(|node| node.id.as_str())),
+        Screen::ThreeD { nodes, .. } => valid.extend(nodes.iter().map(|node| node.id.as_str())),
+    }
+    let existing = SELECTED_NODES();
+    let mut seen = HashSet::new();
+    let filtered: Vec<String> = existing
+        .into_iter()
+        .filter(|id| valid.contains(id.as_str()) && seen.insert(id.clone()))
+        .collect();
+    set_selection_signals(filtered);
+}
+
+fn set_selection_signals(ids: Vec<String>) {
+    let primary = ids.last().cloned();
+    if *SELECTED_NODES.read() != ids {
+        *SELECTED_NODES.write() = ids;
+    }
+    if *SELECTED_NODE.read() != primary {
+        *SELECTED_NODE.write() = primary;
+    }
+}
+
+pub fn select_node(node_id: Option<String>) {
+    set_selection_signals(node_id.into_iter().collect());
+}
+
+pub fn selected_node() -> Option<String> {
+    SELECTED_NODE()
+}
+
+pub fn selected_nodes() -> Vec<String> {
+    SELECTED_NODES()
+}
+
+pub fn is_node_selected(node_id: &str) -> bool {
+    SELECTED_NODES().iter().any(|id| id == node_id)
+}
+
+pub fn set_selected_nodes(ids: Vec<String>) {
+    let mut seen = HashSet::new();
+    let normalized = ids
+        .into_iter()
+        .filter(|id| seen.insert(id.clone()))
+        .collect();
+    set_selection_signals(normalized);
+}
+
+pub fn toggle_node_selection(node_id: &str) {
+    let mut ids = SELECTED_NODES();
+    if let Some(index) = ids.iter().position(|id| id == node_id) {
+        ids.remove(index);
+    } else {
+        ids.push(node_id.to_string());
+    }
+    set_selection_signals(ids);
+}
+
+pub fn add_nodes_to_selection(node_ids: &[String]) {
+    let mut ids = SELECTED_NODES();
+    for node_id in node_ids {
+        if !ids.iter().any(|id| id == node_id) {
+            ids.push(node_id.clone());
+        }
+    }
+    set_selection_signals(ids);
+}
+
+pub fn select_all_nodes() {
+    let Some(screen) = active_screen_snapshot() else {
+        set_selection_signals(Vec::new());
+        return;
+    };
+    let ids = match screen {
+        Screen::TwoD { nodes, .. } => nodes
+            .into_iter()
+            .filter(|node| node.visible && node.id != "node.bg")
+            .map(|node| node.id)
+            .collect(),
+        Screen::ThreeD { nodes, .. } => nodes
+            .into_iter()
+            .filter(|node| node.visible)
+            .map(|node| node.id)
+            .collect(),
+    };
+    set_selection_signals(ids);
+}
+
+pub fn copy_selection() -> bool {
+    let Some(screen) = active_screen_snapshot() else {
+        return false;
+    };
+    let selected = SELECTED_NODES();
+    let count = match screen {
+        Screen::TwoD { nodes, .. } => {
+            let copies = selected
+                .iter()
+                .filter_map(|id| nodes.iter().find(|node| &node.id == id).cloned())
+                .collect::<Vec<_>>();
+            let count = copies.len();
+            if !copies.is_empty() {
+                CLIPBOARD.with(|slot| {
+                    *slot.borrow_mut() = Some(CanvasClipboard::TwoD(copies));
+                });
+            }
+            count
+        }
+        Screen::ThreeD { nodes, .. } => {
+            let copies = selected
+                .iter()
+                .filter_map(|id| nodes.iter().find(|node| &node.id == id).cloned())
+                .collect::<Vec<_>>();
+            let count = copies.len();
+            if !copies.is_empty() {
+                CLIPBOARD.with(|slot| {
+                    *slot.borrow_mut() = Some(CanvasClipboard::ThreeD(copies));
+                });
+            }
+            count
+        }
+    };
+    if count > 0 {
+        PASTE_SERIAL.with(|serial| serial.set(0));
+        set_notice(NoticeLevel::Info, format!("已复制 {count} 个节点"));
+        true
+    } else {
+        set_notice(NoticeLevel::Warning, "没有可复制的节点");
+        false
+    }
+}
+
+pub fn cut_selection() -> Result<usize, String> {
+    let Some(screen) = active_screen_snapshot() else {
+        return Ok(0);
+    };
+    let screen_id = screen.id().to_string();
+    let selected = SELECTED_NODES();
+    if selected.is_empty() {
+        set_notice(NoticeLevel::Warning, "没有可剪切的节点");
+        return Ok(0);
+    }
+    let (unlocked_ids, locked_count, clipboard) = match screen {
+        Screen::TwoD { ref nodes, .. } => {
+            let unlocked = nodes
+                .iter()
+                .filter(|node| selected.contains(&node.id) && !node.locked)
+                .cloned()
+                .collect::<Vec<_>>();
+            let locked_count = nodes
+                .iter()
+                .filter(|node| selected.contains(&node.id) && node.locked)
+                .count();
+            let ids: Vec<String> = unlocked.iter().map(|node| node.id.clone()).collect();
+            (ids, locked_count, CanvasClipboard::TwoD(unlocked))
+        }
+        Screen::ThreeD { ref nodes, .. } => {
+            let unlocked = nodes
+                .iter()
+                .filter(|node| selected.contains(&node.id) && !node.locked)
+                .cloned()
+                .collect::<Vec<_>>();
+            let locked_count = nodes
+                .iter()
+                .filter(|node| selected.contains(&node.id) && node.locked)
+                .count();
+            let ids: Vec<String> = unlocked.iter().map(|node| node.id.clone()).collect();
+            (ids, locked_count, CanvasClipboard::ThreeD(unlocked))
+        }
+    };
+    if unlocked_ids.is_empty() {
+        set_notice(NoticeLevel::Warning, "所选节点均已锁定，无法剪切");
+        return Ok(0);
+    }
+    CLIPBOARD.with(|slot| {
+        *slot.borrow_mut() = Some(clipboard);
+    });
+    PASTE_SERIAL.with(|serial| serial.set(0));
+    let commands = unlocked_ids
+        .iter()
+        .map(|node_id| EditorCommand::DeleteNode {
+            screen_id: screen_id.clone(),
+            node_id: node_id.clone(),
+        })
+        .collect();
+    execute_batch(commands).map_err(|error| error.to_string())?;
+    let cut_locked = locked_count > 0;
+    set_selection_signals(Vec::new());
+    let count = unlocked_ids.len();
+    if cut_locked {
+        set_notice(
+            NoticeLevel::Warning,
+            format!("已剪切 {count} 个节点，{locked_count} 个锁定节点未处理"),
+        );
+    } else {
+        set_notice(NoticeLevel::Info, format!("已剪切 {count} 个节点"));
+    }
+    Ok(count)
+}
+
+pub fn paste_clipboard() -> Result<usize, String> {
+    let Some(screen) = active_screen_snapshot() else {
+        return Ok(0);
+    };
+    let Some(clipboard) = CLIPBOARD.with(|slot| slot.borrow().clone()) else {
+        set_notice(NoticeLevel::Warning, "剪贴板为空");
+        return Ok(0);
+    };
+    let serial = PASTE_SERIAL.with(|value| value.get()).saturating_add(1);
+    let screen_id = screen.id().to_string();
+    let (commands, selected_ids) = match (screen, clipboard) {
+        (Screen::TwoD { nodes, .. }, CanvasClipboard::TwoD(items)) => {
+            if items.is_empty() {
+                return Ok(0);
+            }
+            let offset = 24.0 * serial as f32;
+            let max_x = items
+                .iter()
+                .map(|node| node.rect.right())
+                .fold(f32::NEG_INFINITY, f32::max);
+            let max_y = items
+                .iter()
+                .map(|node| node.rect.bottom())
+                .fold(f32::NEG_INFINITY, f32::max);
+            let dx = offset.min((1600.0 - max_x).max(0.0));
+            let dy = offset.min((900.0 - max_y).max(0.0));
+            let mut ids = nodes.iter().map(|node| node.id.clone()).collect::<Vec<_>>();
+            let mut commands = Vec::with_capacity(items.len());
+            let mut selected_ids = Vec::with_capacity(items.len());
+            for item in items {
+                let id = unique_node_id(&item.id, ids.iter().map(String::as_str))
+                    .map_err(|error| error.to_string())?;
+                ids.push(id.clone());
+                let mut node = item;
+                node.id = id.clone();
+                node.name = format!("{} 副本", node.name);
+                node.rect = Rect {
+                    x: node.rect.x + dx,
+                    y: node.rect.y + dy,
+                    ..node.rect
+                };
+                selected_ids.push(id);
+                commands.push(EditorCommand::Add2dNode {
+                    screen_id: screen_id.clone(),
+                    node,
+                });
+            }
+            (commands, selected_ids)
+        }
+        (Screen::ThreeD { nodes, .. }, CanvasClipboard::ThreeD(items)) => {
+            if items.is_empty() {
+                return Ok(0);
+            }
+            let offset = 0.5 * serial as f32;
+            let mut ids = nodes.iter().map(|node| node.id.clone()).collect::<Vec<_>>();
+            let mut commands = Vec::with_capacity(items.len());
+            let mut selected_ids = Vec::with_capacity(items.len());
+            for item in items {
+                let id = unique_node_id(&item.id, ids.iter().map(String::as_str))
+                    .map_err(|error| error.to_string())?;
+                ids.push(id.clone());
+                let mut node = item;
+                node.id = id.clone();
+                node.name = format!("{} 副本", node.name);
+                node.position[0] += offset;
+                node.position[2] += offset;
+                selected_ids.push(id);
+                commands.push(EditorCommand::Add3dNode {
+                    screen_id: screen_id.clone(),
+                    node,
+                });
+            }
+            (commands, selected_ids)
+        }
+        (Screen::TwoD { .. }, CanvasClipboard::ThreeD(_)) => {
+            set_notice(
+                NoticeLevel::Warning,
+                "剪贴板中是 3D 设备，不能粘贴到 2D 画面",
+            );
+            return Ok(0);
+        }
+        (Screen::ThreeD { .. }, CanvasClipboard::TwoD(_)) => {
+            set_notice(
+                NoticeLevel::Warning,
+                "剪贴板中是 2D 节点，不能粘贴到 3D 画面",
+            );
+            return Ok(0);
+        }
+    };
+    execute_batch(commands).map_err(|error| error.to_string())?;
+    PASTE_SERIAL.with(|value| value.set(serial));
+    let count = selected_ids.len();
+    set_selected_nodes(selected_ids);
+    set_notice(NoticeLevel::Info, format!("已粘贴 {count} 个节点"));
+    Ok(count)
+}
+
+pub fn duplicate_selection() -> Result<usize, String> {
+    let (Some(screen_id), selected) = (active_screen(), SELECTED_NODES()) else {
+        set_notice(NoticeLevel::Warning, "没有可复制的节点");
+        return Ok(0);
+    };
+    if selected.is_empty() {
+        set_notice(NoticeLevel::Warning, "没有可复制的节点");
+        return Ok(0);
+    }
+    let Some(screen) = active_screen_snapshot() else {
+        return Ok(0);
+    };
+    let unlocked = match screen {
+        Screen::TwoD { nodes, .. } => nodes
+            .iter()
+            .filter(|node| selected.contains(&node.id) && !node.locked)
+            .map(|node| node.id.clone())
+            .collect::<Vec<_>>(),
+        Screen::ThreeD { nodes, .. } => nodes
+            .iter()
+            .filter(|node| selected.contains(&node.id) && !node.locked)
+            .map(|node| node.id.clone())
+            .collect::<Vec<_>>(),
+    };
+    if unlocked.is_empty() {
+        set_notice(NoticeLevel::Warning, "所选节点均已锁定，无法复制");
+        return Ok(0);
+    }
+    let commands = unlocked
+        .iter()
+        .map(|node_id| EditorCommand::DuplicateNode {
+            screen_id: screen_id.clone(),
+            node_id: node_id.clone(),
+        })
+        .collect();
+    let result = execute_batch(commands).map_err(|error| error.to_string())?;
+    let count = result.affected_ids.len();
+    set_selected_nodes(result.affected_ids);
+    set_notice(NoticeLevel::Info, format!("已复制 {count} 个节点"));
+    Ok(count)
+}
+
+pub fn delete_selection() -> Result<usize, String> {
+    let (Some(screen_id), selected) = (active_screen(), SELECTED_NODES()) else {
+        return Ok(0);
+    };
+    if selected.is_empty() {
+        set_notice(NoticeLevel::Warning, "没有可删除的节点");
+        return Ok(0);
+    }
+    let Some(screen) = active_screen_snapshot() else {
+        return Ok(0);
+    };
+    let (deletable, locked) = match screen {
+        Screen::TwoD { nodes, .. } => nodes
+            .iter()
+            .filter(|node| selected.contains(&node.id))
+            .fold(
+                (Vec::new(), Vec::new()),
+                |(mut deletable, mut locked), node| {
+                    if node.locked {
+                        locked.push(node.id.clone());
+                    } else {
+                        deletable.push(node.id.clone());
+                    }
+                    (deletable, locked)
+                },
+            ),
+        Screen::ThreeD { nodes, .. } => nodes
+            .iter()
+            .filter(|node| selected.contains(&node.id))
+            .fold(
+                (Vec::new(), Vec::new()),
+                |(mut deletable, mut locked), node| {
+                    if node.locked {
+                        locked.push(node.id.clone());
+                    } else {
+                        deletable.push(node.id.clone());
+                    }
+                    (deletable, locked)
+                },
+            ),
+    };
+    if deletable.is_empty() {
+        set_notice(NoticeLevel::Warning, "所选节点均已锁定，无法删除");
+        return Ok(0);
+    }
+    let locked_count = locked.len();
+    let commands = deletable
+        .iter()
+        .map(|node_id| EditorCommand::DeleteNode {
+            screen_id: screen_id.clone(),
+            node_id: node_id.clone(),
+        })
+        .collect();
+    execute_batch(commands).map_err(|error| error.to_string())?;
+    set_selected_nodes(locked);
+    let count = deletable.len();
+    if locked_count > 0 {
+        set_notice(
+            NoticeLevel::Warning,
+            format!("已删除 {count} 个节点，{locked_count} 个锁定节点未处理"),
+        );
+    } else {
+        set_notice(NoticeLevel::Info, format!("已删除 {count} 个节点"));
+    }
+    Ok(count)
+}
+
+pub fn select_screen(screen_id: &str) {
+    if project()
+        .screens
+        .iter()
+        .any(|screen| screen.id() == screen_id)
+    {
+        *ACTIVE_SCREEN.write() = Some(screen_id.to_string());
+        set_selection_signals(Vec::new());
+        clear_scene_labels_3d();
+    }
+}
+
+pub fn active_screen() -> Option<String> {
+    ACTIVE_SCREEN()
+}
+
+pub fn workspace_mode() -> WorkspaceMode {
+    WORKSPACE_MODE()
+}
+
+pub fn set_workspace_mode(mode: WorkspaceMode) {
+    *WORKSPACE_MODE.write() = mode;
+}
+
+pub fn runtime_only() -> bool {
+    RUNTIME_ONLY()
+}
+
+pub fn guide_open() -> bool {
+    GUIDE_OPEN()
+}
+
+pub fn set_guide_open(open: bool) {
+    *GUIDE_OPEN.write() = open;
+}
+
+pub fn toggle_guide() {
+    let open = !guide_open();
+    set_guide_open(open);
+}
+
+pub fn text_entry_focused() -> bool {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        return NATIVE_TEXT_ENTRY_FOCUSED.load(Ordering::Relaxed);
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        let Some(active) = web_sys::window()
+            .and_then(|window| window.document())
+            .and_then(|document| document.active_element())
+        else {
+            return false;
+        };
+        let tag = active.tag_name().to_ascii_uppercase();
+        if matches!(tag.as_str(), "INPUT" | "TEXTAREA" | "SELECT") {
+            return true;
+        }
+        js_sys::Reflect::get(
+            active.as_ref(),
+            &wasm_bindgen::JsValue::from_str("isContentEditable"),
+        )
+        .ok()
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false)
+    }
+}
+
+pub fn set_text_entry_focused(focused: bool) {
+    #[cfg(not(target_arch = "wasm32"))]
+    NATIVE_TEXT_ENTRY_FOCUSED.store(focused, Ordering::Relaxed);
+    #[cfg(target_arch = "wasm32")]
+    let _ = focused;
+}
+
+pub fn ui_captures_pointer() -> bool {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        NATIVE_UI_CAPTURES_POINTER.load(Ordering::Relaxed)
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        false
+    }
+}
+
+pub fn set_ui_captures_pointer(captured: bool) {
+    #[cfg(not(target_arch = "wasm32"))]
+    NATIVE_UI_CAPTURES_POINTER.store(captured, Ordering::Relaxed);
+    #[cfg(target_arch = "wasm32")]
+    let _ = captured;
+}
+
+pub fn pointer_on_native_canvas() -> bool {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        NATIVE_POINTER_ON_CANVAS.load(Ordering::Relaxed)
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        false
+    }
+}
+
+pub fn set_pointer_on_native_canvas(inside: bool) {
+    #[cfg(not(target_arch = "wasm32"))]
+    NATIVE_POINTER_ON_CANVAS.store(inside, Ordering::Relaxed);
+    #[cfg(target_arch = "wasm32")]
+    let _ = inside;
+}
+
+pub fn install_native_haptic(handler: fn()) {
+    #[cfg(not(target_arch = "wasm32"))]
+    let _ = NATIVE_HAPTIC_HANDLER.set(handler);
+    #[cfg(target_arch = "wasm32")]
+    let _ = handler;
+}
+
+pub fn native_haptic() {
+    #[cfg(not(target_arch = "wasm32"))]
+    if let Some(handler) = NATIVE_HAPTIC_HANDLER.get() {
+        handler();
+    }
+}
+
+pub fn gamepad_status() -> GamepadStatus {
+    GAMEPAD_STATUS()
+}
+
+pub fn set_gamepad_status(connected: bool, id: impl Into<String>) {
+    let next = GamepadStatus {
+        connected,
+        id: id.into(),
+    };
+    if *GAMEPAD_STATUS.read() != next {
+        *GAMEPAD_STATUS.write() = next;
+    }
+}
+
+pub fn controller_tuning_hud() -> Option<ControllerTuningHud> {
+    CONTROLLER_TUNING_HUD()
+}
+
+pub fn set_controller_tuning_hud(hud: Option<ControllerTuningHud>) {
+    if *CONTROLLER_TUNING_HUD.read() != hud {
+        *CONTROLLER_TUNING_HUD.write() = hud;
+    }
+}
+
+pub fn controller_tuning_active() -> bool {
+    controller_tuning_hud().is_some()
+}
+
+fn runtime_mode_requested() -> bool {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        return std::env::var("MOX_HMI_RUNTIME_ONLY")
+            .is_ok_and(|value| matches!(value.as_str(), "1" | "true" | "on" | "yes"));
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        let Some(window) = web_sys::window() else {
+            return false;
+        };
+        let runtime_marker = js_sys::Reflect::get(
+            window.as_ref(),
+            &wasm_bindgen::JsValue::from_str("__MOX_HMI_RUNTIME_ONLY__"),
+        )
+        .ok()
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false);
+        if runtime_marker {
+            return true;
+        }
+        let search = window.location().search().unwrap_or_default();
+        search
+            .trim_start_matches('?')
+            .split('&')
+            .any(|part| matches!(part, "runtime=1" | "runtime=true" | "mode=run"))
+    }
+}
+
+pub fn tick_tags(dt_ms: u64) {
+    let changed = with_session(|session| session.tick_tags(dt_ms)).unwrap_or(false);
+    if changed {
+        *TAG_REVISION.write() += 1;
+    }
+}
+
+pub fn write_tag(tag_id: &str, value: TagValue) -> Result<(), HmiError> {
+    let result = with_session(|session| session.write_tag(tag_id, value))
+        .map_err(HmiError::InvalidCommand)?;
+    if result.is_ok() {
+        *TAG_REVISION.write() += 1;
+    }
+    result
+}
+
+pub fn invoke_button_action(action: &ButtonAction) -> Result<(), HmiError> {
+    match action {
+        ButtonAction::ToggleTag { tag_id } => {
+            let value = tag_snapshot()
+                .get(tag_id)
+                .cloned()
+                .ok_or_else(|| HmiError::UnknownTag(tag_id.clone()))?;
+            let next = match value {
+                TagValue::Bool(value) => TagValue::Bool(!value),
+                _ => {
+                    return Err(HmiError::InvalidCommand(
+                        "ToggleTag 只支持 Bool Tag".to_string(),
+                    ));
+                }
+            };
+            write_tag(tag_id, next)
+        }
+        ButtonAction::SetTag { tag_id, value } => write_tag(tag_id, value.clone()),
+    }
+}
+
+pub fn persist_now() -> Result<(), String> {
+    let json = export_json()?;
+    match storage::save_raw(&json) {
+        Ok(()) => {
+            *SAVE_STATUS.write() = SaveStatus::Saved;
+            Ok(())
+        }
+        Err(error) => {
+            *SAVE_STATUS.write() = SaveStatus::Failed;
+            set_notice(NoticeLevel::Error, error.clone());
+            Err(error)
+        }
+    }
+}
+
+pub fn export_json() -> Result<String, String> {
+    to_json(&project()).map_err(|error| error.to_string())
+}
+
+pub fn export_download_name() -> String {
+    export_filename(&project())
+}
+
+pub fn import_json(raw: &str) -> Result<(), String> {
+    let project = from_json(raw).map_err(|error| error.to_string())?;
+    let startup = project.startup_screen.clone();
+    let replacement = with_session(|session| session.replace_project(project))?;
+    replacement.map_err(|errors| {
+        errors
+            .into_iter()
+            .map(|error| error.to_string())
+            .collect::<Vec<_>>()
+            .join("; ")
+    })?;
+    let revision = with_session(|session| session.document_revision()).unwrap_or(2);
+    *DOCUMENT_REVISION.write() = revision;
+    *TAG_REVISION.write() += 1;
+    *ACTIVE_SCREEN.write() = Some(startup);
+    set_selection_signals(Vec::new());
+    *SAVE_STATUS.write() = SaveStatus::Pending;
+    set_notice(NoticeLevel::Info, "工程导入成功");
+    Ok(())
+}
+
+pub fn mark_engine_ready() {
+    *ENGINE_STATUS.write() = EngineStatus::Ready;
+    #[cfg(target_arch = "wasm32")]
+    web_sys::console::log_1(&wasm_bindgen::JsValue::from_str("MOX HMI runtime ready"));
+}
+
+pub fn mark_engine_failed(message: impl Into<String>) {
+    *ENGINE_STATUS.write() = EngineStatus::Failed(message.into());
+}
+
+pub fn set_notice(level: NoticeLevel, message: impl Into<String>) {
+    NOTICE.with(|slot| {
+        *slot.borrow_mut() = Some(Notice {
+            level,
+            message: message.into(),
+        });
+    });
+    *NOTICE_REVISION.write() += 1;
+}
+
+pub fn notice() -> Option<Notice> {
+    let _ = NOTICE_REVISION();
+    NOTICE.with(|slot| slot.borrow().clone())
+}
+
+pub fn clear_notice() {
+    NOTICE.with(|slot| {
+        *slot.borrow_mut() = None;
+    });
+    *NOTICE_REVISION.write() += 1;
+}
+
+pub fn announce_field_error() {
+    *FIELD_ERROR_ANNOUNCEMENT.write() = Some("请输入有效数值".to_string());
+}
+
+pub fn clear_field_error_announcement() {
+    *FIELD_ERROR_ANNOUNCEMENT.write() = None;
+}
+
+pub fn view_center_2d() -> [f32; 2] {
+    VIEW_CENTER_2D.with(Cell::get)
+}
+
+pub fn set_view_center_2d(center: [f32; 2]) {
+    VIEW_CENTER_2D.with(|cell| cell.set(center));
+}
+
+pub fn zoom_2d() -> f32 {
+    ZOOM_2D.with(Cell::get)
+}
+
+pub fn set_zoom_2d(zoom: f32) {
+    ZOOM_2D.with(|cell| cell.set(zoom));
+}
+
+pub fn camera_reset_revision() -> u32 {
+    *CAMERA_RESET_REVISION.read()
+}
+
+pub fn reset_camera_3d() {
+    *CAMERA_RESET_REVISION.write() += 1;
+}
+
+pub fn set_scene_labels_3d(labels: Vec<SceneLabel3D>) {
+    if *VIEW_LABELS_3D.read() != labels {
+        *VIEW_LABELS_3D.write() = labels;
+    }
+}
+
+pub fn clear_scene_labels_3d() {
+    if !VIEW_LABELS_3D.read().is_empty() {
+        *VIEW_LABELS_3D.write() = Vec::new();
+    }
+}
+
+pub fn project_contains_node(project: &ProjectDocument, node_id: &str) -> bool {
+    project.screens.iter().any(|screen| match screen {
+        Screen::TwoD { nodes, .. } => nodes.iter().any(|node| node.id == node_id),
+        Screen::ThreeD { nodes, .. } => nodes.iter().any(|node| node.id == node_id),
+    })
+}
+
+pub fn all_node_ids(project: &ProjectDocument) -> HashSet<String> {
+    let mut ids = HashSet::new();
+    for screen in &project.screens {
+        match screen {
+            Screen::TwoD { nodes, .. } => ids.extend(nodes.iter().map(|node| node.id.clone())),
+            Screen::ThreeD { nodes, .. } => ids.extend(nodes.iter().map(|node| node.id.clone())),
+        }
+    }
+    ids
+}
+
+pub fn active_screen_snapshot() -> Option<Screen> {
+    let project = project();
+    let active = active_screen().or_else(|| Some(project.startup_screen.clone()))?;
+    project.screen(&active).cloned()
+}
+
+pub fn shutdown_for_tests() {
+    SESSION.with(|slot| {
+        *slot.borrow_mut() = None;
+    });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{GamepadStatus, active_screen, initialize, project, shutdown_for_tests};
+
+    #[test]
+    fn initializes_outside_browser_runtime() {
+        shutdown_for_tests();
+        initialize().expect("native bridge should initialize");
+        assert!(!project().screens.is_empty());
+        assert!(active_screen().is_some());
+        shutdown_for_tests();
+    }
+
+    #[test]
+    fn recognizes_dualsense_across_platform_names() {
+        for id in [
+            "DualSense Wireless Controller",
+            "PS5 Controller",
+            "PlayStation 5 Controller",
+        ] {
+            assert!(
+                GamepadStatus {
+                    connected: true,
+                    id: id.to_string(),
+                }
+                .is_dualsense(),
+                "{id}"
+            );
+        }
+        assert!(
+            !GamepadStatus {
+                connected: true,
+                id: "Xbox Controller".to_string(),
+            }
+            .is_dualsense()
+        );
+    }
+}

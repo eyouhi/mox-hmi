@@ -1,0 +1,5 @@
+[alias]
+x = "run --package xtask --"
+
+[build]
+rustflags = ["-Zthreads=8", "-Zshare-generics=yes"]

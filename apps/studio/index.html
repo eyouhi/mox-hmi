@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="dark">
+    <meta name="theme-color" content="#050b0f">
+    <meta name="text-scale" content="scale">
+    <meta name="description" content="MOX HMI Studio：面向车站 BAS 场景的 Web 端 HMI 编辑器与运行器。">
+    <script src="webgpu-compat.js"></script>
+    <title>{app_title}</title>
+    <link rel="icon" type="image/svg+xml" href="favicon.svg">
+    <link rel="stylesheet" href="boot.css">
+  </head>
+  <body>
+    <div id="main"></div>
+    <div id="boot-shell" role="status" aria-live="polite">
+      <div class="boot-card">
+        <span class="boot-mark" aria-hidden="true">M</span>
+        <span class="boot-spinner" aria-hidden="true"></span>
+        <div>
+          <div class="boot-title">MOX HMI Studio</div>
+          <div class="boot-copy">正在加载 WebGPU 编辑器…</div>
+        </div>
+      </div>
+    </div>
+    <noscript>
+      <div class="noscript-card">MOX HMI Studio 需要启用 JavaScript 才能运行。</div>
+    </noscript>
+  </body>
+</html>
