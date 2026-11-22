@@ -640,9 +640,9 @@ pub fn two_d_input(
                 (-event.y * sensitivity).exp(),
             );
         } else if event.x.abs() > f32::EPSILON || event.y.abs() > f32::EPSILON {
-            let scale = 1.0 / camera_state.zoom;
-            transform.translation.x += event.x * scale;
-            transform.translation.y -= event.y * scale;
+            let offset = wheel_pan_translation(Vec2::new(event.x, event.y), camera_state.zoom);
+            transform.translation.x += offset.x;
+            transform.translation.y += offset.y;
         }
     }
 
@@ -795,6 +795,10 @@ pub fn two_d_input(
 
 fn drag_activation_reached(delta: [f32; 2], zoom: f32) -> bool {
     delta[0].hypot(delta[1]) * zoom >= DRAG_ACTIVATION_SCREEN_PX
+}
+
+fn wheel_pan_translation(delta: Vec2, zoom: f32) -> Vec2 {
+    Vec2::new(-delta.x, delta.y) / zoom.max(f32::EPSILON)
 }
 
 fn snap_moved_axes(mut snap: CenterSnap, raw: Rect, delta: [f32; 2]) -> CenterSnap {
@@ -1351,7 +1355,8 @@ pub fn publish_view_state(
 
 #[cfg(test)]
 mod tests {
-    use super::{drag_activation_reached, snap_moved_axes};
+    use super::{drag_activation_reached, snap_moved_axes, wheel_pan_translation};
+    use bevy::prelude::Vec2;
     use hmi_core::{CenterSnap, Rect};
 
     #[test]
@@ -1364,6 +1369,14 @@ mod tests {
         assert!(drag_activation_reached([3.0, 0.0], 1.0));
         assert!(!drag_activation_reached([3.0, 0.0], 0.5));
         assert!(drag_activation_reached([6.0, 0.0], 0.5));
+    }
+
+    #[test]
+    fn wheel_pan_keeps_content_under_fingers() {
+        assert_eq!(
+            wheel_pan_translation(Vec2::new(10.0, 5.0), 2.0),
+            Vec2::new(-5.0, 2.5)
+        );
     }
 
     #[test]

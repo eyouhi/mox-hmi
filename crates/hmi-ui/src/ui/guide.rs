@@ -136,7 +136,7 @@ fn GuideStart() -> Element {
             }
             div { class: "guide-callout is-soft",
                 strong { "对齐反馈" }
-                p { "2D 拖动、键盘轻推和手柄移动都会吸附到画板/节点中心线。吸附瞬间播放“砰”声；macOS 原生编辑器同时触发触控板线性马达，若浏览器暴露 DualSense vibrationActuator，手柄也会同步短振。" }
+                p { "2D 拖动、键盘轻推和手柄移动都会吸附到画板/节点中心线。吸附瞬间播放轻提示音；macOS 原生编辑器同时触发触控板线性马达，若浏览器暴露 DualSense vibrationActuator，手柄也会同步短振。" }
             }
             div { class: "guide-callout is-soft",
                 strong { "标准快捷键与输入优先级" }

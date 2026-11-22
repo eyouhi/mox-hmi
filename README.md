@@ -101,7 +101,7 @@ dx serve --web --port 8088
 
 浏览器需为桌面版 Chrome/Edge 120+，并在可用 GPU 上启用 WebGPU；生产环境必须使用 HTTPS。Safari、Firefox 和移动端不在本期支持范围内。窄窗口会切换为纵向布局，但触屏和平板不是验收目标。
 
-触控板线性马达反馈只在 `cargo x edit` 启动的 macOS 原生编辑器中可用；`cargo x run` 是浏览器运行器。PS5 DualSense 在原生编辑器通过 Bevy `bevy_gilrs` 读取并触发 rumble，在 Web 运行器通过 Gamepad API 的 `vibrationActuator` 尽力触发；不支持时静默降级。
+触控板线性马达反馈只在 `cargo x edit` 启动的 macOS 原生编辑器中可用；`cargo x run` 是浏览器运行器。PS5 DualSense 在原生编辑器优先通过 Apple GameController 框架读取，无法使用时回退到 Bevy `bevy_gilrs`；Web 运行器通过 Gamepad API 的 `vibrationActuator` 尽力触发振动。不支持时静默降级。
 
 中心吸附音效使用 Web Audio，并在拖拽开始的手势内初始化；震动反馈通过 Vibration API 尽力触发，macOS 桌面 Chrome/Edge 通常不暴露该能力。
 
@@ -173,7 +173,7 @@ http://127.0.0.1:8088/?runtime=1
 | 键盘 | 方向键整组轻推 1 单位，`Shift` + 方向键轻推 10；`Q`/`E` 单选旋转 1°，`Shift` 加速到 15°；`F` 聚焦全部所选节点。复制、删除、撤销等见通用快捷键。 |
 | DualSense | 左摇杆移动整组；右摇杆平移；L2/R2 缩放；方向键整组精确轻推；Cross 聚焦；Circle 取消选择；Square 原地复制；Triangle 删除；L1/R1 单选切换；L3 + Square 全选；L3 + Cross/Circle/Triangle 复制/剪切/粘贴；Options 撤销；L3 + Options 重做；L3 + L1/R1 切换画面；Create 打开指引。 |
 
-2D 的组拖动、键盘轻推、方向键和手柄移动都会以选择包围盒中心吸附画板/节点中心线，显示琥珀色对齐线并播放“砰”声；macOS 原生编辑器触发触控板线性马达，支持 `vibrationActuator` 的 DualSense 同步短振。悬停未选节点会显示微弱的多层发光轮廓。
+2D 的组拖动、键盘轻推、方向键和手柄移动都会以选择包围盒中心吸附画板/节点中心线，显示琥珀色对齐线并播放轻提示音；macOS 原生编辑器触发触控板线性马达，支持 `vibrationActuator` 的 DualSense 同步短振。悬停未选节点会显示微弱的多层发光轮廓。
 
 触控板捏合由浏览器 `wheel` 事件中的 `ctrlKey`/`metaKey` 识别，双指平移仍使用普通滚动；不按修饰键时不会被误判为缩放。
 
@@ -190,7 +190,7 @@ http://127.0.0.1:8088/?runtime=1
 
 ### 手柄连接
 
-在 macOS 蓝牙设置中配对 DualSense，按一下 PS 键唤醒后按任意键；顶栏会显示连接状态。原生编辑器通过 Bevy `bevy_gilrs` 读取手柄，Web 运行器通过标准 Gamepad API 读取；振动均按设备能力尽力触发，不支持时其余键鼠/触控板操作不受影响。
+在 macOS 蓝牙设置中配对 DualSense，按一下 PS 键唤醒后按任意键；顶栏会显示连接状态。原生编辑器优先通过 Apple GameController 框架读取手柄，macOS 26+ 的蓝牙 DualSense 不需要“输入监控”权限；框架不可用时才回退到 Bevy `bevy_gilrs`。Web 运行器通过标准 Gamepad API 读取。振动均按设备能力尽力触发，不支持时其余键鼠/触控板操作不受影响。
 
 ## AI 控制隧道
 

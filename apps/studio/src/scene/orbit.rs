@@ -169,8 +169,7 @@ pub fn orbit_system(
                 let right = transform.right().as_vec3();
                 let up = transform.up().as_vec3();
                 let scale = orbit.distance * 0.0015;
-                orbit.focus -= right * event.x * scale;
-                orbit.focus -= up * event.y * scale;
+                orbit.focus += wheel_pan_focus_delta(Vec2::new(event.x, event.y), right, up, scale);
             }
         }
 
@@ -211,6 +210,10 @@ fn frame_selected(cached: &CachedProject, orbit: &mut OrbitCamera) {
     orbit.distance = ((span.max(spread * 1.4)) * 2.2).clamp(6.0, 24.0);
 }
 
+fn wheel_pan_focus_delta(delta: Vec2, right: Vec3, up: Vec3, scale: f32) -> Vec3 {
+    (up * delta.y - right * delta.x) * scale
+}
+
 fn model_span(model: &DeviceModel) -> f32 {
     match model {
         DeviceModel::Ahu { size, .. }
@@ -219,5 +222,19 @@ fn model_span(model: &DeviceModel) -> f32 {
         DeviceModel::Duct { length, .. } | DeviceModel::Pipe { length, .. } => *length,
         DeviceModel::Valve { size, .. } => *size * 2.0,
         DeviceModel::Glb { .. } => 3.0,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::wheel_pan_focus_delta;
+    use bevy::prelude::{Vec2, Vec3};
+
+    #[test]
+    fn wheel_pan_keeps_content_under_fingers() {
+        assert_eq!(
+            wheel_pan_focus_delta(Vec2::new(10.0, 5.0), Vec3::X, Vec3::Y, 2.0),
+            Vec3::new(-20.0, 10.0, 0.0)
+        );
     }
 }

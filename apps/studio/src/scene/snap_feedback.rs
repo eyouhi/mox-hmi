@@ -79,15 +79,15 @@ fn play_snap_sound() {
     };
 
     let now = context.current_time();
-    oscillator.set_type(OscillatorType::Triangle);
+    oscillator.set_type(OscillatorType::Sine);
     let frequency = oscillator.frequency();
-    let _ = frequency.set_value_at_time(180.0, now);
-    let _ = frequency.exponential_ramp_to_value_at_time(68.0, now + 0.085);
+    let _ = frequency.set_value_at_time(2600.0, now);
+    let _ = frequency.exponential_ramp_to_value_at_time(2200.0, now + 0.024);
 
     let envelope = gain.gain();
     let _ = envelope.set_value_at_time(0.0001, now);
-    let _ = envelope.exponential_ramp_to_value_at_time(0.11, now + 0.006);
-    let _ = envelope.exponential_ramp_to_value_at_time(0.0001, now + 0.11);
+    let _ = envelope.exponential_ramp_to_value_at_time(0.035, now + 0.002);
+    let _ = envelope.exponential_ramp_to_value_at_time(0.0001, now + 0.028);
 
     let destination = context.destination();
     let oscillator_node: &AudioNode = oscillator.unchecked_ref();
@@ -96,7 +96,7 @@ fn play_snap_sound() {
     let _ = oscillator_node.connect_with_audio_node(gain_node);
     let _ = gain_node.connect_with_audio_node(destination_node);
     let _ = oscillator.start_with_when(now);
-    let _ = oscillator.stop_with_when(now + 0.12);
+    let _ = oscillator.stop_with_when(now + 0.04);
 }
 
 #[cfg(target_arch = "wasm32")]

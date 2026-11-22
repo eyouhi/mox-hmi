@@ -2,6 +2,8 @@
 use bevy::input::gamepad::GamepadButton;
 use bevy::prelude::*;
 use hmi_core::Screen;
+#[cfg(target_os = "macos")]
+use std::sync::atomic::{AtomicBool, Ordering};
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::{JsCast, JsValue};
 #[cfg(target_arch = "wasm32")]
@@ -12,6 +14,10 @@ const STICK_DEADZONE: f32 = 0.18;
 const HID_BUTTON_PAGE: u32 = 0x09;
 #[cfg(not(target_arch = "wasm32"))]
 const DUAL_SENSE_TOUCHPAD_USAGE: u32 = 14;
+#[cfg(target_os = "macos")]
+static GAME_CONTROLLER_REPORTED: AtomicBool = AtomicBool::new(false);
+#[cfg(target_os = "macos")]
+static GAME_CONTROLLER_INPUT_REPORTED: AtomicBool = AtomicBool::new(false);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(usize)]
@@ -179,6 +185,11 @@ pub fn poll_gamepad(
 ) {
     let previous_buttons = state.buttons;
     state.previous_buttons = previous_buttons;
+    #[cfg(target_os = "macos")]
+    if poll_game_controller(&mut state) {
+        crate::bridge::set_gamepad_status(true, state.id.clone());
+        return;
+    }
     let Some((gamepad, name)) = gamepads.iter().next() else {
         if state.connected {
             state.connected = false;
@@ -225,6 +236,107 @@ pub fn poll_gamepad(
         }
     }
     crate::bridge::set_gamepad_status(true, state.id.clone());
+}
+
+// macOS 26+ switches DualSense Bluetooth reports to a combined format that
+// gilrs does not decode. Apple's GameController framework reads the same
+// controller correctly, so prefer it when a controller is available.
+#[cfg(target_os = "macos")]
+fn poll_game_controller(state: &mut GamepadState) -> bool {
+    use objc2_game_controller::GCController;
+    use std::sync::Once;
+
+    static SETUP: Once = Once::new();
+    SETUP.call_once(|| unsafe {
+        GCController::setShouldMonitorBackgroundEvents(true);
+    });
+
+    let controllers = unsafe { GCController::controllers() };
+    for controller in controllers.iter() {
+        let Some(pad) = (unsafe { controller.extendedGamepad() }) else {
+            continue;
+        };
+        unsafe {
+            fill_game_controller_state(&controller, &pad, state);
+        }
+        return true;
+    }
+    false
+}
+
+#[cfg(target_os = "macos")]
+unsafe fn fill_game_controller_state(
+    controller: &objc2_game_controller::GCController,
+    pad: &objc2_game_controller::GCExtendedGamepad,
+    state: &mut GamepadState,
+) {
+    use objc2_game_controller::GCDevice;
+
+    unsafe {
+        state.connected = true;
+        state.id = controller
+            .vendorName()
+            .map(|name| name.to_string())
+            .unwrap_or_else(|| "DualSense (GameController)".to_string());
+
+        let left_stick = pad.leftThumbstick();
+        let right_stick = pad.rightThumbstick();
+        state.axes = [
+            left_stick.xAxis().value(),
+            left_stick.yAxis().value(),
+            right_stick.xAxis().value(),
+            right_stick.yAxis().value(),
+        ];
+
+        let left_trigger = pad.leftTrigger();
+        let right_trigger = pad.rightTrigger();
+        state.triggers = [
+            left_trigger.value().clamp(0.0, 1.0),
+            right_trigger.value().clamp(0.0, 1.0),
+        ];
+
+        state.buttons = [false; 18];
+        state.buttons[PadButton::Cross as usize] = pad.buttonA().isPressed();
+        state.buttons[PadButton::Circle as usize] = pad.buttonB().isPressed();
+        state.buttons[PadButton::Square as usize] = pad.buttonX().isPressed();
+        state.buttons[PadButton::Triangle as usize] = pad.buttonY().isPressed();
+        state.buttons[PadButton::L1 as usize] = pad.leftShoulder().isPressed();
+        state.buttons[PadButton::R1 as usize] = pad.rightShoulder().isPressed();
+        state.buttons[PadButton::L2 as usize] = left_trigger.isPressed();
+        state.buttons[PadButton::R2 as usize] = right_trigger.isPressed();
+        state.buttons[PadButton::Options as usize] = pad.buttonMenu().isPressed();
+        state.buttons[PadButton::Create as usize] =
+            pad.buttonOptions().is_some_and(|button| button.isPressed());
+        state.buttons[PadButton::L3 as usize] = pad
+            .leftThumbstickButton()
+            .is_some_and(|button| button.isPressed());
+        state.buttons[PadButton::R3 as usize] = pad
+            .rightThumbstickButton()
+            .is_some_and(|button| button.isPressed());
+
+        let dpad = pad.dpad();
+        state.buttons[PadButton::DpadUp as usize] = dpad.up().isPressed();
+        state.buttons[PadButton::DpadDown as usize] = dpad.down().isPressed();
+        state.buttons[PadButton::DpadLeft as usize] = dpad.left().isPressed();
+        state.buttons[PadButton::DpadRight as usize] = dpad.right().isPressed();
+
+        let profile = controller.physicalInputProfile();
+        if let Some(name) = objc2_game_controller::GCInputDualShockTouchpadButton {
+            if let Some(button) = profile.buttons().objectForKey(name) {
+                state.buttons[PadButton::Touchpad as usize] = button.isPressed();
+            }
+        }
+
+        if !GAME_CONTROLLER_REPORTED.swap(true, Ordering::Relaxed) {
+            eprintln!("MOX HMI Studio: GameController 已连接: {}", state.id);
+        }
+        let has_input = state.buttons.iter().any(|pressed| *pressed)
+            || state.axes.iter().any(|axis| axis.abs() > 0.05)
+            || state.triggers.iter().any(|trigger| *trigger > 0.05);
+        if has_input && !GAME_CONTROLLER_INPUT_REPORTED.swap(true, Ordering::Relaxed) {
+            eprintln!("MOX HMI Studio: GameController 首次收到手柄输入");
+        }
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
