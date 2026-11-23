@@ -123,18 +123,6 @@ impl CenterSnapTargets {
             },
         )
     }
-
-    fn near_x(&self, center: f32, tolerance: f32) -> bool {
-        self.x
-            .iter()
-            .any(|target| (target - center).abs() <= tolerance)
-    }
-
-    fn near_y(&self, center: f32, tolerance: f32) -> bool {
-        self.y
-            .iter()
-            .any(|target| (target - center).abs() <= tolerance)
-    }
 }
 
 fn union_rect<'a>(rects: impl Iterator<Item = &'a Rect>) -> Option<Rect> {
@@ -372,12 +360,7 @@ pub fn two_d_input(
     mut camera_state: ResMut<TwoDCameraState>,
 ) {
     if !cached.is_two_d() {
-        finish_gamepad_move(&cached, &mut edit_state);
-        for event in wheel_events.read() {
-            let _ = event;
-        }
-        edit_state.drag = None;
-        edit_state.keyboard_snap = (None, None);
+        reset_two_d_input(&cached, &mut wheel_events, &mut edit_state);
         return;
     }
     let Some(nodes) = active_nodes(&cached) else {
@@ -401,115 +384,26 @@ pub fn two_d_input(
     };
     let run_mode = crate::bridge::WORKSPACE_MODE() == crate::bridge::WorkspaceMode::Run;
 
-    let pan_requested = (pointer_on_canvas
-        || matches!(edit_state.drag, Some(DragState::Pan { .. })))
-        && (mouse_buttons.pressed(MouseButton::Middle)
-            || (mouse_buttons.pressed(MouseButton::Left) && keyboard.pressed(KeyCode::Space)));
-    if pan_requested {
-        let current = Vec2::new(point[0], point[1]);
-        let last = match edit_state.drag.as_ref() {
-            Some(DragState::Pan { last_world }) => *last_world,
-            _ => {
-                edit_state.drag = Some(DragState::Pan {
-                    last_world: current,
-                });
-                current
-            }
-        };
-        if (current - last).length_squared() > f32::EPSILON {
-            let previous_world = design_to_world([last.x, last.y], DESIGN_SIZE);
-            let current_world = design_to_world([current.x, current.y], DESIGN_SIZE);
-            transform.translation.x -= current_world[0] - previous_world[0];
-            transform.translation.y -= current_world[1] - previous_world[1];
-            edit_state.drag = Some(DragState::Pan {
-                last_world: current,
-            });
-        }
+    if update_pan(
+        &mouse_buttons,
+        &keyboard,
+        pointer_on_canvas,
+        point,
+        &mut transform,
+        &mut edit_state,
+    ) {
         return;
-    }
-    if matches!(edit_state.drag, Some(DragState::Pan { .. })) {
-        edit_state.drag = None;
     }
 
     if pointer_on_canvas && mouse_buttons.just_pressed(MouseButton::Left) {
-        let selected = crate::bridge::selected_nodes();
-        let additive = editor_modifier_pressed(&keyboard);
-        if !run_mode
-            && !additive
-            && selected.len() == 1
-            && let Some(selected_node) = nodes.iter().find(|node| node.id == selected[0])
-            && !selected_node.locked
-            && let Some(corner) = resize_corner_at(
-                selected_node.rect,
-                selected_node.rotation_deg,
-                point,
-                12.0 / camera_state.zoom,
-            )
-        {
-            edit_state.drag = Some(DragState::Resize {
-                node_id: selected_node.id.clone(),
-                corner,
-                start: point,
-                original: selected_node.rect,
-                preview: selected_node.rect,
-            });
-        } else if let Some(node) = hit_node(nodes, point, camera_state.zoom) {
-            if run_mode {
-                crate::bridge::select_node(Some(node.id.clone()));
-                if let Widget2D::Button { action, .. } = &node.widget
-                    && let Err(error) = crate::bridge::invoke_button_action(action)
-                {
-                    crate::bridge::set_notice(crate::bridge::NoticeLevel::Error, error.to_string());
-                }
-            } else if additive {
-                crate::bridge::toggle_node_selection(&node.id);
-            } else {
-                if !crate::bridge::is_node_selected(&node.id) {
-                    crate::bridge::select_node(Some(node.id.clone()));
-                }
-                let active_selection = crate::bridge::selected_nodes();
-                let moving = selected_unlocked_nodes(nodes, &active_selection);
-                if moving.is_empty() && !active_selection.is_empty() {
-                    crate::bridge::set_notice(
-                        crate::bridge::NoticeLevel::Warning,
-                        "所选节点均已锁定，无法移动",
-                    );
-                }
-                if !moving.is_empty()
-                    && let Some(bounds_original) = union_rect(moving.iter().map(|node| &node.rect))
-                {
-                    let originals = node_rects(&moving);
-                    let targets = CenterSnapTargets::for_nodes(nodes, &active_selection);
-                    super::snap_feedback::prime();
-                    edit_state.drag = Some(DragState::Move {
-                        start: point,
-                        originals,
-                        bounds_original,
-                        bounds_preview: bounds_original,
-                        activated: false,
-                        snap: CenterSnap {
-                            rect: bounds_original,
-                            x: None,
-                            y: None,
-                        },
-                        last_snap: (None, None),
-                        last_feedback_s: f64::NEG_INFINITY,
-                        targets,
-                    });
-                }
-            }
-        } else if run_mode {
-            crate::bridge::select_node(None);
-        } else {
-            if !additive {
-                crate::bridge::select_node(None);
-            }
-            edit_state.drag = Some(DragState::Marquee {
-                start: point,
-                current: point,
-                additive,
-            });
-        }
+        begin_left_press(
+            nodes,
+            point,
+            run_mode,
+            editor_modifier_pressed(&keyboard),
+            camera_state.zoom,
+            &mut edit_state,
+        );
     }
 
     let continuing_drag = matches!(
@@ -518,121 +412,387 @@ pub fn two_d_input(
             | Some(DragState::Resize { .. })
             | Some(DragState::Marquee { .. })
     );
-    if (pointer_on_canvas || continuing_drag) && mouse_buttons.pressed(MouseButton::Left) {
-        match edit_state.drag.as_mut() {
-            Some(DragState::Move {
-                start,
-                originals,
-                bounds_original,
-                bounds_preview,
-                activated,
-                snap,
-                last_snap,
-                last_feedback_s,
-                targets,
-            }) => {
-                let delta = [point[0] - start[0], point[1] - start[1]];
-                if !*activated {
-                    if !drag_activation_reached(delta, camera_state.zoom) {
-                        return;
-                    }
-                    *activated = true;
-                }
-                let raw = clamped_group_move(*bounds_original, delta);
-                *snap = targets.snap(raw, camera_state.zoom);
-                *bounds_preview = snap.rect;
-                let engaged = snap.x.is_some_and(|target| last_snap.0 != Some(target))
-                    || snap.y.is_some_and(|target| last_snap.1 != Some(target));
-                if engaged {
-                    let now = time.elapsed_secs_f64();
-                    if now - *last_feedback_s >= SNAP_FEEDBACK_COOLDOWN_SECS {
-                        super::snap_feedback::trigger();
-                        *last_feedback_s = now;
-                    }
-                }
-                *last_snap = (snap.x, snap.y);
-                for (node_id, rect) in
-                    grouped_previews(originals, *bounds_original, *bounds_preview)
-                {
-                    apply_rect_preview(&mut root_query, &node_id, rect);
-                }
-            }
-            Some(DragState::Resize {
-                start,
-                original,
-                corner,
-                preview,
-                ..
-            }) => {
-                *preview = resize_rect(
-                    *original,
-                    *corner,
-                    [point[0] - start[0], point[1] - start[1]],
-                    8.0,
-                );
-            }
-            Some(DragState::Marquee { current, .. }) => {
-                *current = point;
-            }
-            _ => {}
-        }
+    if (pointer_on_canvas || continuing_drag)
+        && mouse_buttons.pressed(MouseButton::Left)
+        && !update_active_drag(
+            &mut edit_state,
+            &mut root_query,
+            point,
+            time.elapsed_secs_f64(),
+            camera_state.zoom,
+        )
+    {
+        return;
     }
 
     if mouse_buttons.just_released(MouseButton::Left) {
-        let drag = edit_state.drag.take();
-        match drag {
-            Some(DragState::Move {
-                originals,
-                bounds_preview,
-                bounds_original,
-                ..
-            }) if bounds_preview != bounds_original => {
-                commit_rects(
-                    &cached,
-                    &grouped_previews(&originals, bounds_original, bounds_preview),
-                );
-            }
-            Some(DragState::Resize {
-                node_id,
-                preview,
-                original,
-                ..
-            }) if preview != original => {
-                commit_rect(&cached, &node_id, preview);
-            }
-            Some(drag @ DragState::GamepadMove { .. }) => {
-                edit_state.drag = Some(drag);
-            }
-            Some(DragState::Marquee {
-                start,
-                current,
-                additive,
-            }) if start != current => {
-                let marquee = marquee_rect(start, current);
-                let hits = nodes_intersecting_marquee(nodes, marquee);
-                let ids = if additive {
-                    let mut ids = crate::bridge::selected_nodes();
-                    for id in hits {
-                        if !ids.contains(&id) {
-                            ids.push(id);
-                        }
-                    }
-                    ids
-                } else {
-                    hits
-                };
-                crate::bridge::set_selected_nodes(ids);
-            }
-            _ => {}
-        }
+        finish_left_release(&cached, nodes, &mut edit_state);
     }
 
+    apply_wheel_2d(
+        &mut wheel_events,
+        pointer_on_canvas,
+        &keyboard,
+        camera,
+        camera_transform,
+        &mut transform,
+        &mut projection,
+        &mut camera_state,
+        cursor,
+    );
+
+    if !apply_keyboard_2d(
+        &cached,
+        nodes,
+        &keyboard,
+        time.elapsed_secs_f64(),
+        &mut edit_state,
+        &mut camera_state,
+        &mut transform,
+        &mut projection,
+    ) {
+        return;
+    }
+
+    apply_gamepad_2d(
+        &cached,
+        nodes,
+        &pad,
+        time.delta_secs().min(0.05),
+        time.elapsed_secs_f64(),
+        anchor,
+        camera,
+        camera_transform,
+        &mut transform,
+        &mut projection,
+        &mut camera_state,
+        &mut edit_state,
+        &mut root_query,
+    );
+
+    finish_pan_release(&mouse_buttons, &keyboard, &mut edit_state);
+}
+
+fn reset_two_d_input(
+    cached: &CachedProject,
+    wheel_events: &mut MessageReader<'_, '_, MouseWheel>,
+    edit_state: &mut TwoDEditState,
+) {
+    finish_gamepad_move(cached, edit_state);
+    for _event in wheel_events.read() {}
+    edit_state.drag = None;
+    edit_state.keyboard_snap = (None, None);
+}
+
+fn update_pan(
+    mouse_buttons: &ButtonInput<MouseButton>,
+    keyboard: &ButtonInput<KeyCode>,
+    pointer_on_canvas: bool,
+    point: [f32; 2],
+    transform: &mut Transform,
+    edit_state: &mut TwoDEditState,
+) -> bool {
+    let pan_requested = (pointer_on_canvas
+        || matches!(edit_state.drag, Some(DragState::Pan { .. })))
+        && (mouse_buttons.pressed(MouseButton::Middle)
+            || (mouse_buttons.pressed(MouseButton::Left) && keyboard.pressed(KeyCode::Space)));
+    if !pan_requested {
+        if matches!(edit_state.drag, Some(DragState::Pan { .. })) {
+            edit_state.drag = None;
+        }
+        return false;
+    }
+
+    let current = Vec2::new(point[0], point[1]);
+    let last = match edit_state.drag.as_ref() {
+        Some(DragState::Pan { last_world }) => *last_world,
+        _ => {
+            edit_state.drag = Some(DragState::Pan {
+                last_world: current,
+            });
+            current
+        }
+    };
+    if (current - last).length_squared() > f32::EPSILON {
+        let previous_world = design_to_world([last.x, last.y], DESIGN_SIZE);
+        let current_world = design_to_world([current.x, current.y], DESIGN_SIZE);
+        transform.translation.x -= current_world[0] - previous_world[0];
+        transform.translation.y -= current_world[1] - previous_world[1];
+        edit_state.drag = Some(DragState::Pan {
+            last_world: current,
+        });
+    }
+    true
+}
+
+fn begin_left_press(
+    nodes: &[UiNode],
+    point: [f32; 2],
+    run_mode: bool,
+    additive: bool,
+    zoom: f32,
+    edit_state: &mut TwoDEditState,
+) {
+    let selected = crate::bridge::selected_nodes();
+    if !run_mode
+        && !additive
+        && selected.len() == 1
+        && let Some(selected_node) = nodes.iter().find(|node| node.id == selected[0])
+        && !selected_node.locked
+        && let Some(corner) = resize_corner_at(
+            selected_node.rect,
+            selected_node.rotation_deg,
+            point,
+            12.0 / zoom,
+        )
+    {
+        edit_state.drag = Some(DragState::Resize {
+            node_id: selected_node.id.clone(),
+            corner,
+            start: point,
+            original: selected_node.rect,
+            preview: selected_node.rect,
+        });
+        return;
+    }
+
+    if let Some(node) = hit_node(nodes, point, zoom) {
+        handle_node_press(nodes, node, point, run_mode, additive, edit_state);
+        return;
+    }
+
+    if run_mode {
+        crate::bridge::select_node(None);
+        return;
+    }
+    if !additive {
+        crate::bridge::select_node(None);
+    }
+    edit_state.drag = Some(DragState::Marquee {
+        start: point,
+        current: point,
+        additive,
+    });
+}
+
+fn handle_node_press(
+    nodes: &[UiNode],
+    node: &UiNode,
+    point: [f32; 2],
+    run_mode: bool,
+    additive: bool,
+    edit_state: &mut TwoDEditState,
+) {
+    if run_mode {
+        crate::bridge::select_node(Some(node.id.clone()));
+        if let Widget2D::Button { action, .. } = &node.widget
+            && let Err(error) = crate::bridge::invoke_button_action(action)
+        {
+            crate::bridge::set_notice(crate::bridge::NoticeLevel::Error, error.to_string());
+        }
+        return;
+    }
+    if additive {
+        crate::bridge::toggle_node_selection(&node.id);
+        return;
+    }
+
+    if !crate::bridge::is_node_selected(&node.id) {
+        crate::bridge::select_node(Some(node.id.clone()));
+    }
+    let active_selection = crate::bridge::selected_nodes();
+    let moving = selected_unlocked_nodes(nodes, &active_selection);
+    if moving.is_empty() && !active_selection.is_empty() {
+        crate::bridge::set_notice(
+            crate::bridge::NoticeLevel::Warning,
+            "所选节点均已锁定，无法移动",
+        );
+    }
+    if let Some(bounds_original) = union_rect(moving.iter().map(|node| &node.rect)) {
+        let originals = node_rects(&moving);
+        let targets = CenterSnapTargets::for_nodes(nodes, &active_selection);
+        super::snap_feedback::prime();
+        edit_state.drag = Some(DragState::Move {
+            start: point,
+            originals,
+            bounds_original,
+            bounds_preview: bounds_original,
+            activated: false,
+            snap: CenterSnap {
+                rect: bounds_original,
+                x: None,
+                y: None,
+            },
+            last_snap: (None, None),
+            last_feedback_s: f64::NEG_INFINITY,
+            targets,
+        });
+    }
+}
+
+fn update_active_drag(
+    edit_state: &mut TwoDEditState,
+    root_query: &mut TwoDRootQuery<'_, '_>,
+    point: [f32; 2],
+    now: f64,
+    zoom: f32,
+) -> bool {
+    match edit_state.drag.as_mut() {
+        Some(DragState::Move {
+            start,
+            originals,
+            bounds_original,
+            bounds_preview,
+            activated,
+            snap,
+            last_snap,
+            last_feedback_s,
+            targets,
+        }) => update_move_drag(
+            originals,
+            *bounds_original,
+            bounds_preview,
+            activated,
+            snap,
+            last_snap,
+            last_feedback_s,
+            targets,
+            [point[0] - start[0], point[1] - start[1]],
+            now,
+            zoom,
+            root_query,
+        ),
+        Some(DragState::Resize {
+            start,
+            original,
+            corner,
+            preview,
+            ..
+        }) => {
+            *preview = resize_rect(
+                *original,
+                *corner,
+                [point[0] - start[0], point[1] - start[1]],
+                8.0,
+            );
+            true
+        }
+        Some(DragState::Marquee { current, .. }) => {
+            *current = point;
+            true
+        }
+        _ => true,
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn update_move_drag(
+    originals: &[(String, Rect)],
+    bounds_original: Rect,
+    bounds_preview: &mut Rect,
+    activated: &mut bool,
+    snap: &mut CenterSnap,
+    last_snap: &mut (Option<f32>, Option<f32>),
+    last_feedback_s: &mut f64,
+    targets: &CenterSnapTargets,
+    delta: [f32; 2],
+    now: f64,
+    zoom: f32,
+    root_query: &mut TwoDRootQuery<'_, '_>,
+) -> bool {
+    if !*activated {
+        if !drag_activation_reached(delta, zoom) {
+            return false;
+        }
+        *activated = true;
+    }
+    let raw = clamped_group_move(bounds_original, delta);
+    *snap = targets.snap(raw, zoom);
+    *bounds_preview = snap.rect;
+    let engaged = snap.x.is_some_and(|target| last_snap.0 != Some(target))
+        || snap.y.is_some_and(|target| last_snap.1 != Some(target));
+    if engaged && now - *last_feedback_s >= SNAP_FEEDBACK_COOLDOWN_SECS {
+        super::snap_feedback::trigger();
+        *last_feedback_s = now;
+    }
+    *last_snap = (snap.x, snap.y);
+    for (node_id, rect) in grouped_previews(originals, bounds_original, *bounds_preview) {
+        apply_rect_preview(root_query, &node_id, rect);
+    }
+    true
+}
+
+fn finish_left_release(cached: &CachedProject, nodes: &[UiNode], edit_state: &mut TwoDEditState) {
+    let drag = edit_state.drag.take();
+    match drag {
+        Some(DragState::Move {
+            originals,
+            bounds_preview,
+            bounds_original,
+            ..
+        }) if bounds_preview != bounds_original => {
+            commit_rects(
+                cached,
+                &grouped_previews(&originals, bounds_original, bounds_preview),
+            );
+        }
+        Some(DragState::Resize {
+            node_id,
+            preview,
+            original,
+            ..
+        }) if preview != original => {
+            commit_rect(cached, &node_id, preview);
+        }
+        Some(drag @ DragState::GamepadMove { .. }) => {
+            edit_state.drag = Some(drag);
+        }
+        Some(DragState::Marquee {
+            start,
+            current,
+            additive,
+        }) if start != current => {
+            finish_marquee_selection(nodes, start, current, additive);
+        }
+        _ => {}
+    }
+}
+
+fn finish_marquee_selection(nodes: &[UiNode], start: [f32; 2], current: [f32; 2], additive: bool) {
+    let marquee = marquee_rect(start, current);
+    let hits = nodes_intersecting_marquee(nodes, marquee);
+    let ids = if additive {
+        let mut ids = crate::bridge::selected_nodes();
+        for id in hits {
+            if !ids.contains(&id) {
+                ids.push(id);
+            }
+        }
+        ids
+    } else {
+        hits
+    };
+    crate::bridge::set_selected_nodes(ids);
+}
+
+#[allow(clippy::too_many_arguments)]
+fn apply_wheel_2d(
+    wheel_events: &mut MessageReader<'_, '_, MouseWheel>,
+    pointer_on_canvas: bool,
+    keyboard: &ButtonInput<KeyCode>,
+    camera: &Camera,
+    camera_transform: &GlobalTransform,
+    transform: &mut Transform,
+    projection: &mut Projection,
+    camera_state: &mut TwoDCameraState,
+    cursor: Option<Vec2>,
+) {
     for event in wheel_events.read() {
         if !pointer_on_canvas {
             continue;
         }
         let zoom_requested =
-            event.unit == MouseScrollUnit::Line || input::zoom_modifier_pressed(&keyboard);
+            event.unit == MouseScrollUnit::Line || input::zoom_modifier_pressed(keyboard);
         if zoom_requested {
             if event.y.abs() < f32::EPSILON {
                 continue;
@@ -645,9 +805,9 @@ pub fn two_d_input(
             apply_zoom_2d(
                 camera,
                 camera_transform,
-                &mut transform,
-                &mut *projection,
-                &mut camera_state,
+                transform,
+                projection,
+                camera_state,
                 cursor,
                 (-event.y * sensitivity).exp(),
             );
@@ -657,153 +817,181 @@ pub fn two_d_input(
             transform.translation.y += offset.y;
         }
     }
+}
 
-    if !run_mode && input::keyboard_input_enabled() && !input::command_modifier_pressed(&keyboard) {
-        if keyboard.just_pressed(KeyCode::KeyF) {
-            frame_selected_2d(nodes, &mut transform, &mut projection, &mut camera_state);
-        }
-        let selected = crate::bridge::selected_nodes();
-        let unlocked = selected_unlocked_nodes(nodes, &selected);
-        if !unlocked.is_empty() {
-            let step = if input::shift_pressed(&keyboard) {
-                10.0
-            } else {
-                1.0
-            };
-            let mut delta = [0.0, 0.0];
-            if keyboard.just_pressed(KeyCode::ArrowLeft) {
-                delta[0] -= step;
-            }
-            if keyboard.just_pressed(KeyCode::ArrowRight) {
-                delta[0] += step;
-            }
-            if keyboard.just_pressed(KeyCode::ArrowUp) {
-                delta[1] -= step;
-            }
-            if keyboard.just_pressed(KeyCode::ArrowDown) {
-                delta[1] += step;
-            }
-            let mut updates: Vec<(String, Rect)> = Vec::new();
-            if delta != [0.0, 0.0] {
-                let Some(bounds) = union_rect(unlocked.iter().map(|node| &node.rect)) else {
-                    return;
-                };
-                let raw = clamped_group_move(bounds, delta);
-                let targets = CenterSnapTargets::for_nodes(nodes, &selected);
-                let snap = fine_nudge_snap(
-                    targets.snap(raw, camera_state.zoom),
-                    raw,
-                    delta,
-                    bounds,
-                    &targets,
-                    camera_state.zoom,
-                );
-                let engaged = snap
-                    .x
-                    .is_some_and(|target| edit_state.keyboard_snap.0 != Some(target))
-                    || snap
-                        .y
-                        .is_some_and(|target| edit_state.keyboard_snap.1 != Some(target));
-                if engaged {
-                    super::snap_feedback::trigger();
-                }
-                edit_state.keyboard_snap = (snap.x, snap.y);
-                edit_state.keyboard_snap_until_s = time.elapsed_secs_f64() + 0.45;
-                updates = grouped_previews(&node_rects(&unlocked), bounds, snap.rect);
-            }
-            let rotation_step = if input::shift_pressed(&keyboard) {
-                15.0
-            } else {
-                1.0
-            };
-            let rotation: f32 = if selected.len() == 1 && keyboard.just_pressed(KeyCode::KeyQ) {
-                -rotation_step
-            } else if selected.len() == 1 && keyboard.just_pressed(KeyCode::KeyE) {
-                rotation_step
-            } else {
-                0.0
-            };
-            let primary = crate::bridge::selected_node();
-            if rotation.abs() > f32::EPSILON
-                && let Some(primary_id) = primary.as_ref()
-                && let Some(primary_node) = unlocked.iter().find(|node| &node.id == primary_id)
-            {
-                if let Some((_, rect)) = updates.iter().find(|(id, _)| id == primary_id) {
-                    let _ = rect;
-                } else {
-                    updates.push((primary_node.id.clone(), primary_node.rect));
-                }
-            }
-            if !updates.is_empty() {
-                let Some(screen_id) = cached.screen_id.clone() else {
-                    return;
-                };
-                let commands = updates
-                    .into_iter()
-                    .filter_map(|(id, rect)| {
-                        let node = nodes.iter().find(|node| node.id == id)?;
-                        let mut updated = node.clone();
-                        updated.rect = rect;
-                        if rotation.abs() > f32::EPSILON && primary.as_deref() == Some(id.as_str())
-                        {
-                            updated.rotation_deg =
-                                (updated.rotation_deg + rotation).rem_euclid(360.0);
-                        }
-                        if updated == *node {
-                            return None;
-                        }
-                        Some(EditorCommand::Update2dNode {
-                            screen_id: screen_id.clone(),
-                            node: updated,
-                        })
-                    })
-                    .collect::<Vec<_>>();
-                if let Err(error) = crate::bridge::execute_batch(commands) {
-                    crate::bridge::set_notice(crate::bridge::NoticeLevel::Error, error.to_string());
-                }
-            }
-        }
+#[allow(clippy::too_many_arguments)]
+fn apply_keyboard_2d(
+    cached: &CachedProject,
+    nodes: &[UiNode],
+    keyboard: &ButtonInput<KeyCode>,
+    now: f64,
+    edit_state: &mut TwoDEditState,
+    camera_state: &mut TwoDCameraState,
+    transform: &mut Transform,
+    projection: &mut Projection,
+) -> bool {
+    if !input::keyboard_input_enabled() || input::command_modifier_pressed(keyboard) {
+        return true;
+    }
+    if keyboard.just_pressed(KeyCode::KeyF) {
+        frame_selected_2d(nodes, transform, projection, camera_state);
+    }
+    let selected = crate::bridge::selected_nodes();
+    let unlocked = selected_unlocked_nodes(nodes, &selected);
+    if unlocked.is_empty() {
+        return true;
     }
 
-    if crate::bridge::controller_tuning_active() {
-        finish_gamepad_move(&cached, &mut edit_state);
-    } else if !input::gamepad_input_enabled() || !pad.connected {
-        finish_gamepad_move(&cached, &mut edit_state);
+    let step = if input::shift_pressed(keyboard) {
+        10.0
     } else {
-        let dt = time.delta_secs().min(0.05);
-        let right = pad.right_stick();
-        if right.length_squared() > 0.0 {
-            transform.translation.x += right.x * GAMEPAD_PAN_SPEED * dt / camera_state.zoom;
-            transform.translation.y -= right.y * GAMEPAD_PAN_SPEED * dt / camera_state.zoom;
-        }
-        let zoom = pad.right_trigger() - pad.left_trigger();
-        if zoom.abs() > 0.01 {
-            apply_zoom_2d(
-                camera,
-                camera_transform,
-                &mut transform,
-                &mut *projection,
-                &mut camera_state,
-                anchor,
-                (zoom * 1.8 * dt).exp(),
-            );
-        }
-        for (node_id, rect) in gamepad_edit_2d(
-            &cached,
-            nodes,
-            &pad,
-            &mut edit_state,
-            dt,
-            time.elapsed_secs_f64(),
-            camera_state.zoom,
-        ) {
-            apply_rect_preview(&mut root_query, &node_id, rect);
-        }
-        if pad.just_pressed(PadButton::Cross) {
-            frame_selected_2d(nodes, &mut transform, &mut projection, &mut camera_state);
-        }
+        1.0
+    };
+    let mut delta = [0.0, 0.0];
+    if keyboard.just_pressed(KeyCode::ArrowLeft) {
+        delta[0] -= step;
+    }
+    if keyboard.just_pressed(KeyCode::ArrowRight) {
+        delta[0] += step;
+    }
+    if keyboard.just_pressed(KeyCode::ArrowUp) {
+        delta[1] -= step;
+    }
+    if keyboard.just_pressed(KeyCode::ArrowDown) {
+        delta[1] += step;
     }
 
+    let mut updates = Vec::new();
+    if delta != [0.0, 0.0] {
+        let Some(bounds) = union_rect(unlocked.iter().map(|node| &node.rect)) else {
+            return false;
+        };
+        let raw = clamped_group_move(bounds, delta);
+        let targets = CenterSnapTargets::for_nodes(nodes, &selected);
+        let snap = fine_nudge_snap(targets.snap(raw, camera_state.zoom), raw, delta, bounds);
+        let engaged = snap
+            .x
+            .is_some_and(|target| edit_state.keyboard_snap.0 != Some(target))
+            || snap
+                .y
+                .is_some_and(|target| edit_state.keyboard_snap.1 != Some(target));
+        if engaged {
+            super::snap_feedback::trigger();
+        }
+        edit_state.keyboard_snap = (snap.x, snap.y);
+        edit_state.keyboard_snap_until_s = now + 0.45;
+        updates = grouped_previews(&node_rects(&unlocked), bounds, snap.rect);
+    }
+
+    let rotation_step = if input::shift_pressed(keyboard) {
+        15.0
+    } else {
+        1.0
+    };
+    let rotation: f32 = match (
+        selected.len(),
+        keyboard.just_pressed(KeyCode::KeyQ),
+        keyboard.just_pressed(KeyCode::KeyE),
+    ) {
+        (1, true, _) => -rotation_step,
+        (1, _, true) => rotation_step,
+        _ => 0.0,
+    };
+    let primary = crate::bridge::selected_node();
+    if rotation.abs() > f32::EPSILON
+        && let Some(primary_id) = primary.as_ref()
+        && let Some(primary_node) = unlocked.iter().find(|node| &node.id == primary_id)
+        && !updates.iter().any(|(id, _)| id == primary_id)
+    {
+        updates.push((primary_node.id.clone(), primary_node.rect));
+    }
+    if updates.is_empty() {
+        return true;
+    }
+
+    let Some(screen_id) = cached.screen_id.clone() else {
+        return false;
+    };
+    let commands = updates
+        .into_iter()
+        .filter_map(|(id, rect)| {
+            let node = nodes.iter().find(|node| node.id == id)?;
+            let mut updated = node.clone();
+            updated.rect = rect;
+            if rotation.abs() > f32::EPSILON && primary.as_deref() == Some(id.as_str()) {
+                updated.rotation_deg = (updated.rotation_deg + rotation).rem_euclid(360.0);
+            }
+            if updated == *node {
+                return None;
+            }
+            Some(EditorCommand::Update2dNode {
+                screen_id: screen_id.clone(),
+                node: updated,
+            })
+        })
+        .collect::<Vec<_>>();
+    if let Err(error) = crate::bridge::execute_batch(commands) {
+        crate::bridge::set_notice(crate::bridge::NoticeLevel::Error, error.to_string());
+    }
+    true
+}
+
+#[allow(clippy::too_many_arguments)]
+fn apply_gamepad_2d(
+    cached: &CachedProject,
+    nodes: &[UiNode],
+    pad: &GamepadState,
+    dt: f32,
+    now: f64,
+    anchor: Option<Vec2>,
+    camera: &Camera,
+    camera_transform: &GlobalTransform,
+    transform: &mut Transform,
+    projection: &mut Projection,
+    camera_state: &mut TwoDCameraState,
+    edit_state: &mut TwoDEditState,
+    root_query: &mut TwoDRootQuery<'_, '_>,
+) {
+    if crate::bridge::controller_tuning_active()
+        || !input::gamepad_input_enabled()
+        || !pad.connected
+    {
+        finish_gamepad_move(cached, edit_state);
+        return;
+    }
+
+    let right = pad.right_stick();
+    if right.length_squared() > 0.0 {
+        transform.translation.x += right.x * GAMEPAD_PAN_SPEED * dt / camera_state.zoom;
+        transform.translation.y -= right.y * GAMEPAD_PAN_SPEED * dt / camera_state.zoom;
+    }
+    let zoom = pad.right_trigger() - pad.left_trigger();
+    if zoom.abs() > 0.01 {
+        apply_zoom_2d(
+            camera,
+            camera_transform,
+            transform,
+            projection,
+            camera_state,
+            anchor,
+            (zoom * 1.8 * dt).exp(),
+        );
+    }
+    for (node_id, rect) in
+        gamepad_edit_2d(cached, nodes, pad, edit_state, dt, now, camera_state.zoom)
+    {
+        apply_rect_preview(root_query, &node_id, rect);
+    }
+    if pad.just_pressed(PadButton::Cross) {
+        frame_selected_2d(nodes, transform, projection, camera_state);
+    }
+}
+
+fn finish_pan_release(
+    mouse_buttons: &ButtonInput<MouseButton>,
+    keyboard: &ButtonInput<KeyCode>,
+    edit_state: &mut TwoDEditState,
+) {
     if (mouse_buttons.just_released(MouseButton::Middle)
         || (mouse_buttons.just_released(MouseButton::Left) && keyboard.pressed(KeyCode::Space)))
         && matches!(edit_state.drag, Some(DragState::Pan { .. }))
@@ -832,27 +1020,31 @@ fn snap_moved_axes(mut snap: CenterSnap, raw: Rect, delta: [f32; 2]) -> CenterSn
     snap
 }
 
-fn fine_nudge_snap(
-    snap: CenterSnap,
-    raw: Rect,
-    delta: [f32; 2],
-    original: Rect,
-    targets: &CenterSnapTargets,
-    zoom: f32,
-) -> CenterSnap {
+fn fine_nudge_snap(snap: CenterSnap, raw: Rect, delta: [f32; 2], original: Rect) -> CenterSnap {
     let mut snap = snap_moved_axes(snap, raw, delta);
-    let tolerance = CENTER_SNAP_SCREEN_PX / zoom.max(f32::EPSILON);
     let center_x = original.x + original.width * 0.5;
     let center_y = original.y + original.height * 0.5;
-    if delta[0].abs() > f32::EPSILON && targets.near_x(center_x, tolerance) {
+    if delta[0].abs() > f32::EPSILON
+        && snap
+            .x
+            .is_some_and(|target| !moving_toward(center_x, delta[0], target))
+    {
         snap.rect.x = raw.x;
         snap.x = None;
     }
-    if delta[1].abs() > f32::EPSILON && targets.near_y(center_y, tolerance) {
+    if delta[1].abs() > f32::EPSILON
+        && snap
+            .y
+            .is_some_and(|target| !moving_toward(center_y, delta[1], target))
+    {
         snap.rect.y = raw.y;
         snap.y = None;
     }
     snap
+}
+
+fn moving_toward(center: f32, delta: f32, target: f32) -> bool {
+    (target - center) * delta > f32::EPSILON
 }
 
 fn finish_gamepad_move(cached: &CachedProject, edit_state: &mut TwoDEditState) {
@@ -969,22 +1161,21 @@ fn gamepad_edit_2d(
             .iter()
             .map(|(id, _)| id.clone())
             .collect::<Vec<_>>();
-        if drag_ids != unlocked_ids {
-            if let Some(DragState::GamepadMove {
+        if drag_ids != unlocked_ids
+            && let Some(DragState::GamepadMove {
                 screen_id,
                 originals,
                 bounds_original,
                 bounds_preview,
                 ..
             }) = edit_state.drag.take()
-                && bounds_preview != bounds_original
-            {
-                commit_rects_for_screen(
-                    cached,
-                    &screen_id,
-                    &grouped_previews(&originals, bounds_original, bounds_preview),
-                );
-            }
+            && bounds_preview != bounds_original
+        {
+            commit_rects_for_screen(
+                cached,
+                &screen_id,
+                &grouped_previews(&originals, bounds_original, bounds_preview),
+            );
         }
     }
     if unlocked.is_empty() {
@@ -1094,7 +1285,7 @@ fn nudge_2d(
     };
     let raw = clamped_group_move(bounds, delta);
     let targets = CenterSnapTargets::for_nodes(nodes, selected);
-    let snap = fine_nudge_snap(targets.snap(raw, zoom), raw, delta, bounds, &targets, zoom);
+    let snap = fine_nudge_snap(targets.snap(raw, zoom), raw, delta, bounds);
     let engaged = snap
         .x
         .is_some_and(|target| edit_state.keyboard_snap.0 != Some(target))
@@ -1162,28 +1353,7 @@ pub fn draw_two_d_overlay(
     if !cached.is_two_d() || crate::bridge::WORKSPACE_MODE() == crate::bridge::WorkspaceMode::Run {
         return;
     }
-    let grid_minor = Color::srgba(0.12, 0.25, 0.29, 0.18);
-    let grid_major = Color::srgba(0.18, 0.38, 0.42, 0.25);
-    for x in (0..=1600).step_by(50) {
-        let world = design_to_world([x as f32, 0.0], DESIGN_SIZE);
-        let bottom = design_to_world([x as f32, 900.0], DESIGN_SIZE);
-        let color = if x % 200 == 0 { grid_major } else { grid_minor };
-        gizmos.line_2d(
-            Vec2::new(world[0], world[1]),
-            Vec2::new(bottom[0], bottom[1]),
-            color,
-        );
-    }
-    for y in (0..=900).step_by(50) {
-        let world = design_to_world([0.0, y as f32], DESIGN_SIZE);
-        let right = design_to_world([1600.0, y as f32], DESIGN_SIZE);
-        let color = if y % 200 == 0 { grid_major } else { grid_minor };
-        gizmos.line_2d(
-            Vec2::new(world[0], world[1]),
-            Vec2::new(right[0], right[1]),
-            color,
-        );
-    }
+    draw_grid(&mut gizmos);
 
     let Some(nodes) = active_nodes(&cached) else {
         return;
@@ -1209,14 +1379,67 @@ pub fn draw_two_d_overlay(
         .iter()
         .filter_map(|id| nodes.iter().find(|node| &node.id == id))
         .collect::<Vec<_>>();
-    let previews = match &edit_state.drag {
+    let previews = selection_previews(&edit_state, &selected_nodes);
+    let preview_rects = previews.iter().map(|(_, rect)| rect).collect::<Vec<_>>();
+    let preview_bounds = union_rect(preview_rects.into_iter());
+    let selection_center = preview_bounds.map(|rect| {
+        design_to_world(
+            [rect.x + rect.width * 0.5, rect.y + rect.height * 0.5],
+            DESIGN_SIZE,
+        )
+    });
+    draw_selection(
+        &mut gizmos,
+        &selected_nodes,
+        &previews,
+        preview_bounds,
+        camera_state.zoom,
+    );
+
+    let snap = active_center_snap(&edit_state, time.elapsed_secs_f64(), preview_bounds);
+    if let Some(snap) = snap {
+        draw_center_snap(&mut gizmos, snap, selection_center, camera_state.zoom);
+    }
+    draw_marquee(&mut gizmos, edit_state.drag.as_ref());
+}
+
+fn draw_grid(gizmos: &mut Gizmos) {
+    let grid_minor = Color::srgba(0.12, 0.25, 0.29, 0.18);
+    let grid_major = Color::srgba(0.18, 0.38, 0.42, 0.25);
+    for x in (0..=1600).step_by(50) {
+        let world = design_to_world([x as f32, 0.0], DESIGN_SIZE);
+        let bottom = design_to_world([x as f32, 900.0], DESIGN_SIZE);
+        let color = if x % 200 == 0 { grid_major } else { grid_minor };
+        gizmos.line_2d(
+            Vec2::new(world[0], world[1]),
+            Vec2::new(bottom[0], bottom[1]),
+            color,
+        );
+    }
+    for y in (0..=900).step_by(50) {
+        let world = design_to_world([0.0, y as f32], DESIGN_SIZE);
+        let right = design_to_world([1600.0, y as f32], DESIGN_SIZE);
+        let color = if y % 200 == 0 { grid_major } else { grid_minor };
+        gizmos.line_2d(
+            Vec2::new(world[0], world[1]),
+            Vec2::new(right[0], right[1]),
+            color,
+        );
+    }
+}
+
+fn selection_previews(
+    edit_state: &TwoDEditState,
+    selected_nodes: &[&UiNode],
+) -> Vec<(String, Rect)> {
+    match &edit_state.drag {
         Some(DragState::Move {
             originals,
             bounds_original,
             bounds_preview,
             ..
-        }) => grouped_previews(originals, *bounds_original, *bounds_preview),
-        Some(DragState::GamepadMove {
+        })
+        | Some(DragState::GamepadMove {
             originals,
             bounds_original,
             bounds_preview,
@@ -1229,16 +1452,17 @@ pub fn draw_two_d_overlay(
             .iter()
             .map(|node| (node.id.clone(), node.rect))
             .collect(),
-    };
-    let preview_rects = previews.iter().map(|(_, rect)| rect).collect::<Vec<_>>();
-    let preview_bounds = union_rect(preview_rects.into_iter());
-    let selection_center = preview_bounds.map(|rect| {
-        design_to_world(
-            [rect.x + rect.width * 0.5, rect.y + rect.height * 0.5],
-            DESIGN_SIZE,
-        )
-    });
-    for node in &selected_nodes {
+    }
+}
+
+fn draw_selection(
+    gizmos: &mut Gizmos,
+    selected_nodes: &[&UiNode],
+    previews: &[(String, Rect)],
+    preview_bounds: Option<Rect>,
+    zoom: f32,
+) {
+    for node in selected_nodes {
         let rect = previews
             .iter()
             .find(|(id, _)| id == &node.id)
@@ -1271,7 +1495,7 @@ pub fn draw_two_d_overlay(
             let world = design_to_world(corner, DESIGN_SIZE);
             gizmos.circle_2d(
                 Vec2::new(world[0], world[1]),
-                5.0 / camera_state.zoom,
+                5.0 / zoom,
                 Color::srgb(0.8, 1.0, 0.97),
             );
         }
@@ -1289,12 +1513,18 @@ pub fn draw_two_d_overlay(
             Color::srgba(0.22, 0.9, 0.83, 0.32),
         );
     }
+}
 
-    let snap = match &edit_state.drag {
+fn active_center_snap(
+    edit_state: &TwoDEditState,
+    now: f64,
+    preview_bounds: Option<Rect>,
+) -> Option<CenterSnap> {
+    match &edit_state.drag {
         Some(DragState::Move { snap, .. }) | Some(DragState::GamepadMove { snap, .. }) => {
             Some(*snap)
         }
-        _ if time.elapsed_secs_f64() <= edit_state.keyboard_snap_until_s => preview_bounds
+        _ if now <= edit_state.keyboard_snap_until_s => preview_bounds
             .filter(|_| {
                 edit_state.keyboard_snap.0.is_some() || edit_state.keyboard_snap.1.is_some()
             })
@@ -1304,53 +1534,57 @@ pub fn draw_two_d_overlay(
                 y: edit_state.keyboard_snap.1,
             }),
         _ => None,
-    };
-
-    if let Some(snap) = snap {
-        let guide = Color::srgba(0.95, 0.72, 0.29, 0.92);
-        if let Some(x) = snap.x {
-            let top = design_to_world([x, 0.0], DESIGN_SIZE);
-            let bottom = design_to_world([x, DESIGN_SIZE[1] as f32], DESIGN_SIZE);
-            gizmos.line_2d(
-                Vec2::new(top[0], top[1]),
-                Vec2::new(bottom[0], bottom[1]),
-                guide,
-            );
-        }
-        if let Some(y) = snap.y {
-            let left = design_to_world([0.0, y], DESIGN_SIZE);
-            let right = design_to_world([DESIGN_SIZE[0] as f32, y], DESIGN_SIZE);
-            gizmos.line_2d(
-                Vec2::new(left[0], left[1]),
-                Vec2::new(right[0], right[1]),
-                guide,
-            );
-        }
-        if (snap.x.is_some() || snap.y.is_some())
-            && let Some(center) = selection_center
-        {
-            gizmos.circle_2d(
-                Vec2::new(center[0], center[1]),
-                4.0 / camera_state.zoom,
-                guide,
-            );
-        }
     }
+}
 
-    if let Some(DragState::Marquee { start, current, .. }) = &edit_state.drag {
-        let marquee = marquee_rect(*start, *current);
-        let corners = [
-            design_to_world([marquee.x, marquee.y], DESIGN_SIZE),
-            design_to_world([marquee.right(), marquee.y], DESIGN_SIZE),
-            design_to_world([marquee.right(), marquee.bottom()], DESIGN_SIZE),
-            design_to_world([marquee.x, marquee.bottom()], DESIGN_SIZE),
-        ];
-        let color = Color::srgba(0.35, 0.88, 0.98, 0.95);
-        for index in 0..4 {
-            let from = corners[index];
-            let to = corners[(index + 1) % 4];
-            gizmos.line_2d(Vec2::new(from[0], from[1]), Vec2::new(to[0], to[1]), color);
-        }
+fn draw_center_snap(
+    gizmos: &mut Gizmos,
+    snap: CenterSnap,
+    selection_center: Option<[f32; 3]>,
+    zoom: f32,
+) {
+    let guide = Color::srgba(0.95, 0.72, 0.29, 0.92);
+    if let Some(x) = snap.x {
+        let top = design_to_world([x, 0.0], DESIGN_SIZE);
+        let bottom = design_to_world([x, DESIGN_SIZE[1] as f32], DESIGN_SIZE);
+        gizmos.line_2d(
+            Vec2::new(top[0], top[1]),
+            Vec2::new(bottom[0], bottom[1]),
+            guide,
+        );
+    }
+    if let Some(y) = snap.y {
+        let left = design_to_world([0.0, y], DESIGN_SIZE);
+        let right = design_to_world([DESIGN_SIZE[0] as f32, y], DESIGN_SIZE);
+        gizmos.line_2d(
+            Vec2::new(left[0], left[1]),
+            Vec2::new(right[0], right[1]),
+            guide,
+        );
+    }
+    if (snap.x.is_some() || snap.y.is_some())
+        && let Some(center) = selection_center
+    {
+        gizmos.circle_2d(Vec2::new(center[0], center[1]), 4.0 / zoom, guide);
+    }
+}
+
+fn draw_marquee(gizmos: &mut Gizmos, drag: Option<&DragState>) {
+    let Some(DragState::Marquee { start, current, .. }) = drag else {
+        return;
+    };
+    let marquee = marquee_rect(*start, *current);
+    let corners = [
+        design_to_world([marquee.x, marquee.y], DESIGN_SIZE),
+        design_to_world([marquee.right(), marquee.y], DESIGN_SIZE),
+        design_to_world([marquee.right(), marquee.bottom()], DESIGN_SIZE),
+        design_to_world([marquee.x, marquee.bottom()], DESIGN_SIZE),
+    ];
+    let color = Color::srgba(0.35, 0.88, 0.98, 0.95);
+    for index in 0..4 {
+        let from = corners[index];
+        let to = corners[(index + 1) % 4];
+        gizmos.line_2d(Vec2::new(from[0], from[1]), Vec2::new(to[0], to[1]), color);
     }
 }
 
@@ -1397,9 +1631,7 @@ pub fn publish_view_state(
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        CenterSnapTargets, drag_activation_reached, fine_nudge_snap, wheel_pan_translation,
-    };
+    use super::{drag_activation_reached, fine_nudge_snap, wheel_pan_translation};
     use bevy::prelude::Vec2;
     use hmi_core::{CenterSnap, Rect};
 
@@ -1447,14 +1679,51 @@ mod tests {
             x: Some(800.0),
             y: Some(340.0),
         };
-        let targets = CenterSnapTargets {
-            x: vec![800.0],
-            y: vec![340.0],
-        };
-        let snapped = fine_nudge_snap(sticky_snap, raw, [1.0, 0.0], original, &targets, 1.0);
+        let snapped = fine_nudge_snap(sticky_snap, raw, [1.0, 0.0], original);
         assert_eq!(snapped.rect.x, 671.0);
         assert_eq!(snapped.rect.y, 250.0);
         assert_eq!(snapped.x, None);
         assert_eq!(snapped.y, None);
+    }
+
+    #[test]
+    fn fine_nudge_reengages_after_leaving_and_returning_to_center() {
+        let start = Rect {
+            x: 670.0,
+            y: 250.0,
+            width: 260.0,
+            height: 180.0,
+        };
+        let moved = Rect {
+            x: 671.0,
+            y: 250.0,
+            width: 260.0,
+            height: 180.0,
+        };
+        let leaving = fine_nudge_snap(
+            CenterSnap {
+                rect: moved,
+                x: Some(800.0),
+                y: None,
+            },
+            moved,
+            [1.0, 0.0],
+            start,
+        );
+        assert_eq!(leaving.x, None);
+        assert_eq!(leaving.rect.x, 671.0);
+
+        let returning = fine_nudge_snap(
+            CenterSnap {
+                rect: start,
+                x: Some(800.0),
+                y: None,
+            },
+            start,
+            [-1.0, 0.0],
+            moved,
+        );
+        assert_eq!(returning.x, Some(800.0));
+        assert_eq!(returning.rect.x, 670.0);
     }
 }

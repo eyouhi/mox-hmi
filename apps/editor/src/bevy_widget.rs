@@ -400,7 +400,7 @@ impl BevyRuntime {
             .world()
             .resource::<RenderDevice>()
             .wgpu_device();
-        self.texture = create_texture(&device, width, height);
+        self.texture = create_texture(device, width, height);
         self.texture_view = self.texture.create_view(&TextureViewDescriptor {
             format: Some(TextureFormat::Rgba8UnormSrgb),
             ..Default::default()

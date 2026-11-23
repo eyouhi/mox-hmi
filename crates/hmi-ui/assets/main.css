@@ -634,6 +634,13 @@ ul.tag-rows {
   white-space: nowrap;
 }
 
+.panel-gamepad-hint {
+  margin: 0.375rem 0 0;
+  color: var(--muted-2);
+  font-size: 0.59375rem;
+  line-height: 1.5;
+}
+
 .sub-editor {
   margin-top: 0.625rem;
   padding: 0.625rem;
@@ -952,6 +959,72 @@ ul.tag-rows {
 }
 
 .canvas-guide-button:hover { background: #143a3d; }
+
+.axis-gizmo {
+  position: absolute;
+  left: 0.75rem;
+  bottom: 0.75rem;
+  z-index: 7;
+  display: grid;
+  justify-items: center;
+  gap: 0.125rem;
+  width: 5.5rem;
+  padding: 0.3125rem 0.25rem 0.25rem;
+  border: 1px solid rgba(49, 81, 93, 0.8);
+  border-radius: 0.5rem;
+  background: rgba(5, 15, 20, 0.8);
+  color: var(--muted);
+  pointer-events: none;
+  backdrop-filter: blur(0.5rem);
+}
+
+.axis-gizmo-title { font-size: 0.5625rem; letter-spacing: 0.08em; }
+
+.axis-gizmo-stage { position: relative; width: 5.25rem; height: 5.25rem; }
+
+.axis-gizmo-line {
+  position: absolute;
+  left: 2.625rem;
+  top: 2.625rem;
+  height: 0.125rem;
+  border-radius: 999px;
+  transform-origin: 0 50%;
+}
+
+.axis-gizmo-line.is-x { background: #ff8a80; }
+.axis-gizmo-line.is-y { background: #79d38a; }
+.axis-gizmo-line.is-z { background: #79c0ff; }
+
+.axis-gizmo-label {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 0.625rem;
+  font-weight: 700;
+}
+
+.axis-gizmo-label.is-x { color: #ff8a80; }
+.axis-gizmo-label.is-y { color: #79d38a; }
+.axis-gizmo-label.is-z { color: #79c0ff; }
+
+.axis-gizmo-origin {
+  position: absolute;
+  left: 2.5625rem;
+  top: 2.5625rem;
+  width: 0.1875rem;
+  height: 0.1875rem;
+  border-radius: 50%;
+  background: #d9e8eb;
+}
+
+.axis-gizmo-foot { color: var(--muted-2); font-size: 0.53125rem; }
+
+.axis-note {
+  margin: 0 0 0.375rem;
+  color: var(--muted-2);
+  font-size: 0.625rem;
+  line-height: 1.5;
+}
 
 .device-label-layer {
   position: absolute;
@@ -1461,7 +1534,10 @@ ul.ai-activity-list { min-height: 5.25rem; max-height: 13rem; overflow-y: auto; 
   display: flex;
   flex-direction: column;
   width: min(62rem, calc(100vw - 2rem));
-  max-height: min(52rem, calc(100dvh - 2rem));
+  height: calc(100vh - 2rem);
+  height: calc(100dvh - 2rem);
+  max-height: 52rem;
+  min-height: 0;
   overflow: hidden;
   border: 1px solid rgba(55, 230, 212, 0.42);
   border-radius: 0.75rem;
@@ -1471,6 +1547,7 @@ ul.ai-activity-list { min-height: 5.25rem; max-height: 13rem; overflow-y: auto; 
 
 .guide-head {
   display: flex;
+  flex: 0 0 auto;
   align-items: flex-start;
   justify-content: space-between;
   gap: 1rem;
@@ -1529,6 +1606,7 @@ ul.ai-activity-list { min-height: 5.25rem; max-height: 13rem; overflow-y: auto; 
 
 .guide-tabs {
   display: flex;
+  flex: 0 0 auto;
   gap: 0.3125rem;
   padding: 0.625rem 1.125rem;
   border-bottom: 1px solid var(--line-soft);
@@ -1550,8 +1628,10 @@ ul.ai-activity-list { min-height: 5.25rem; max-height: 13rem; overflow-y: auto; 
 .guide-tab.is-active { border-color: rgba(55, 230, 212, 0.55); background: #102b2d; color: var(--cyan); }
 
 .guide-body {
+  flex: 1 1 0;
   min-height: 0;
   overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 0.25rem 1.125rem 1.25rem;
   scrollbar-color: var(--control-border) transparent;
   scrollbar-width: thin;
@@ -1635,6 +1715,7 @@ ul.ai-activity-list { min-height: 5.25rem; max-height: 13rem; overflow-y: auto; 
 
 .guide-foot {
   display: flex;
+  flex: 0 0 auto;
   flex-wrap: wrap;
   align-items: center;
   gap: 0.75rem;

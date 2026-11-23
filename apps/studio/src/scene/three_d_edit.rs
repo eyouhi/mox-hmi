@@ -91,12 +91,14 @@ impl ScreenRect {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn three_d_edit(
     cached: Res<CachedProject>,
     pad: Res<GamepadState>,
     keyboard: Res<ButtonInput<KeyCode>>,
     time: Res<Time>,
     visual_index: Res<ThreeDVisualIndex>,
+    camera_query: Query<&GlobalTransform, With<Camera3d>>,
     mut transforms: Query<&mut Transform>,
     mut state: ResMut<ThreeDEditState>,
 ) {
@@ -186,6 +188,10 @@ pub fn three_d_edit(
     let stick = pad.left_stick();
     let vertical_mode = pad.pressed(PadButton::L3);
     if stick.length_squared() > 0.0 {
+        let (right, forward) = camera_query
+            .single()
+            .map(camera_ground_basis)
+            .unwrap_or((Vec3::X, -Vec3::Z));
         if state.drag.is_none() {
             let Some(screen_id) = cached.screen_id.clone() else {
                 return;
@@ -199,12 +205,7 @@ pub fn three_d_edit(
             } else {
                 STICK_SPEED
             };
-            let mut delta = Vec3::new(stick.x * speed * dt, 0.0, 0.0);
-            if vertical_mode {
-                delta.y = -stick.y * speed * dt;
-            } else {
-                delta.z = -stick.y * speed * dt;
-            }
+            let delta = gamepad_translation(right, forward, stick, vertical_mode, speed, dt);
             drag.translate_preview(delta);
             apply_preview_set(&visual_index, &mut transforms, &drag.previews);
         }
@@ -258,6 +259,34 @@ pub fn three_d_edit(
             crate::bridge::set_notice(crate::bridge::NoticeLevel::Error, error.to_string());
         }
     }
+}
+
+fn camera_ground_basis(camera: &GlobalTransform) -> (Vec3, Vec3) {
+    let right = camera.right().as_vec3();
+    let forward = camera.forward().as_vec3();
+    let right = Vec3::new(right.x, 0.0, right.z);
+    let forward = Vec3::new(forward.x, 0.0, forward.z);
+    (
+        right.try_normalize().unwrap_or(Vec3::X),
+        forward.try_normalize().unwrap_or(-Vec3::Z),
+    )
+}
+
+fn gamepad_translation(
+    right: Vec3,
+    forward: Vec3,
+    stick: Vec2,
+    vertical: bool,
+    speed: f32,
+    dt: f32,
+) -> Vec3 {
+    let mut delta = right * stick.x * speed * dt;
+    if vertical {
+        delta.y += stick.y * speed * dt;
+    } else {
+        delta += forward * stick.y * speed * dt;
+    }
+    delta
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -691,5 +720,27 @@ fn device_local_bounds(model: &DeviceModel) -> (Vec3, Vec3) {
             Vec3::new(*size * 0.5, *size * 0.75, *size * 0.5),
         ),
         DeviceModel::Glb { .. } => (Vec3::new(0.0, 1.0, 0.0), Vec3::splat(1.5)),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::gamepad_translation;
+    use bevy::prelude::{Vec2, Vec3};
+
+    #[test]
+    fn gamepad_stick_follows_camera_basis() {
+        let right = Vec3::X;
+        let forward = -Vec3::Z;
+        let horizontal = gamepad_translation(right, forward, Vec2::new(0.5, 0.0), false, 2.0, 1.0);
+        assert_eq!(horizontal, Vec3::X);
+        let depth = gamepad_translation(right, forward, Vec2::new(0.0, 0.5), false, 2.0, 1.0);
+        assert_eq!(depth, -Vec3::Z);
+    }
+
+    #[test]
+    fn vertical_mode_keeps_stick_x_on_ground_and_uses_up_positive_stick_y() {
+        let delta = gamepad_translation(Vec3::X, -Vec3::Z, Vec2::new(0.5, 0.5), true, 2.0, 1.0);
+        assert_eq!(delta, Vec3::new(1.0, 1.0, 0.0));
     }
 }

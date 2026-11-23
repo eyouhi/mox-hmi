@@ -104,27 +104,6 @@ fn spawn_room(
         Pickable::IGNORE,
     ));
 
-    let wall_material = materials.add(StandardMaterial {
-        base_color: Color::srgb(0.035, 0.08, 0.095),
-        perceptual_roughness: 0.86,
-        ..default()
-    });
-    commands.spawn((
-        HmiScreenContent,
-        Mesh3d(meshes.add(Plane3d::default().mesh().size(26.0, 8.0))),
-        MeshMaterial3d(wall_material.clone()),
-        Transform::from_xyz(0.0, 4.0, -8.0),
-        Pickable::IGNORE,
-    ));
-    commands.spawn((
-        HmiScreenContent,
-        Mesh3d(meshes.add(Plane3d::default().mesh().size(16.0, 8.0))),
-        MeshMaterial3d(wall_material),
-        Transform::from_xyz(-8.0, 4.0, 0.0)
-            .with_rotation(Quat::from_rotation_y(std::f32::consts::FRAC_PI_2)),
-        Pickable::IGNORE,
-    ));
-
     commands.spawn((
         HmiScreenContent,
         DirectionalLight {

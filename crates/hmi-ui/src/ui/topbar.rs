@@ -88,7 +88,11 @@ pub fn Topbar() -> Element {
                     "data-testid": "gamepad-status",
                     role: "status",
                     aria_live: "polite",
-                    title: if gamepad.connected { gamepad.id.clone() } else { "连接 DualSense 后按任意键唤醒".to_string() },
+                    title: if gamepad.connected {
+                        format!("{} · L3+Create 打开组件库 / 数据字典", gamepad.id)
+                    } else {
+                        "连接 DualSense 后按任意键唤醒".to_string()
+                    },
                     "{gamepad_text}"
                 }
             }

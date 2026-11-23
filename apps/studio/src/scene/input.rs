@@ -100,6 +100,14 @@ fn deadzone(value: Vec2) -> Vec2 {
     value / length * normalized
 }
 
+// The Web Gamepad API reports +Y as down, while Apple's GameController
+// framework reports +Y as up. Keep GamepadState on the up-positive convention
+// so every editor control interprets the sticks the same way on both backends.
+#[cfg(any(target_arch = "wasm32", test))]
+fn normalize_web_axis(index: usize, value: f32) -> f32 {
+    if index % 2 == 1 { -value } else { value }
+}
+
 #[cfg(target_arch = "wasm32")]
 pub fn poll_gamepad(mut state: ResMut<GamepadState>) {
     let previous_buttons = state.buttons;
@@ -137,11 +145,12 @@ pub fn poll_gamepad(mut state: ResMut<GamepadState>) {
     state.previous_buttons = previous_buttons;
     let axes = gamepad.axes();
     for index in 0..4 {
-        state.axes[index] = axes
+        let value = axes
             .get(index as u32)
             .as_f64()
             .map(|value| value as f32)
             .unwrap_or(0.0);
+        state.axes[index] = normalize_web_axis(index, value);
     }
     let buttons = gamepad.buttons();
     state.buttons = [false; 18];
@@ -321,10 +330,10 @@ unsafe fn fill_game_controller_state(
         state.buttons[PadButton::DpadRight as usize] = dpad.right().isPressed();
 
         let profile = controller.physicalInputProfile();
-        if let Some(name) = objc2_game_controller::GCInputDualShockTouchpadButton {
-            if let Some(button) = profile.buttons().objectForKey(name) {
-                state.buttons[PadButton::Touchpad as usize] = button.isPressed();
-            }
+        if let Some(name) = objc2_game_controller::GCInputDualShockTouchpadButton
+            && let Some(button) = profile.buttons().objectForKey(name)
+        {
+            state.buttons[PadButton::Touchpad as usize] = button.isPressed();
         }
 
         if !GAME_CONTROLLER_REPORTED.swap(true, Ordering::Relaxed) {
@@ -411,10 +420,6 @@ pub fn pulse_gamepad_rumble(
 }
 
 pub fn gamepad_guide_controls(pad: Res<GamepadState>, time: Res<Time>, mut repeat: Local<f32>) {
-    const DPAD_STEP: f64 = 92.0;
-    const DPAD_REPEAT_SECS: f32 = 0.11;
-    const STICK_SPEED: f64 = 760.0;
-
     if !pad.connected {
         *repeat = 0.0;
         return;
@@ -445,33 +450,58 @@ pub fn gamepad_guide_controls(pad: Res<GamepadState>, time: Res<Time>, mut repea
         *repeat = 0.0;
         return;
     }
+    apply_guide_tab_controls(&pad);
+    apply_guide_scroll(&pad, time.delta_secs().min(0.05), &mut repeat);
+}
+
+const GUIDE_DPAD_STEP: f64 = 92.0;
+const GUIDE_DPAD_REPEAT_SECS: f32 = 0.11;
+const GUIDE_STICK_SPEED: f64 = 760.0;
+
+fn apply_guide_tab_controls(pad: &GamepadState) {
     if pad.just_pressed(PadButton::L1) || pad.just_pressed(PadButton::DpadLeft) {
         crate::bridge::cycle_guide_section(-1);
     }
     if pad.just_pressed(PadButton::R1) || pad.just_pressed(PadButton::DpadRight) {
         crate::bridge::cycle_guide_section(1);
     }
+}
 
-    let dt = time.delta_secs().min(0.05);
-    let stick = pad.left_stick().y as f64;
-    if stick.abs() > 0.01 {
-        crate::bridge::request_guide_scroll(-stick * STICK_SPEED * dt as f64);
+fn apply_guide_scroll(pad: &GamepadState, dt: f32, repeat: &mut f32) {
+    let stick_delta = guide_stick_scroll(pad.left_stick().y, dt);
+    if stick_delta.abs() > 0.01 {
+        crate::bridge::request_guide_scroll(stick_delta);
     }
+    let dpad_delta = guide_repeat_scroll(repeat, dt, guide_dpad_direction(pad));
+    if dpad_delta.abs() > f64::EPSILON {
+        crate::bridge::request_guide_scroll(dpad_delta);
+    }
+}
 
-    let direction = if pad.pressed(PadButton::DpadUp) {
+fn guide_stick_scroll(stick_y: f32, dt: f32) -> f64 {
+    -(stick_y as f64) * GUIDE_STICK_SPEED * dt as f64
+}
+
+fn guide_dpad_direction(pad: &GamepadState) -> f64 {
+    if pad.pressed(PadButton::DpadUp) {
         -1.0
     } else if pad.pressed(PadButton::DpadDown) {
         1.0
     } else {
         0.0
-    };
+    }
+}
+
+fn guide_repeat_scroll(repeat: &mut f32, dt: f32, direction: f64) -> f64 {
     if direction == 0.0 {
         *repeat = 0.0;
+        0.0
     } else if *repeat <= 0.0 {
-        crate::bridge::request_guide_scroll(direction * DPAD_STEP);
-        *repeat = DPAD_REPEAT_SECS;
+        *repeat = GUIDE_DPAD_REPEAT_SECS;
+        direction * GUIDE_DPAD_STEP
     } else {
         *repeat = (*repeat - dt).max(0.0);
+        0.0
     }
 }
 
@@ -492,7 +522,7 @@ pub fn keyboard_input_enabled() -> bool {
 pub fn canvas_has_focus() -> bool {
     #[cfg(not(target_arch = "wasm32"))]
     {
-        return true;
+        true
     }
     #[cfg(target_arch = "wasm32")]
     {
@@ -507,7 +537,7 @@ pub fn pointer_over_canvas(position: Vec2) -> bool {
     #[cfg(not(target_arch = "wasm32"))]
     {
         let _ = position;
-        return crate::bridge::pointer_on_native_canvas();
+        crate::bridge::pointer_on_native_canvas()
     }
     #[cfg(target_arch = "wasm32")]
     {
@@ -547,7 +577,7 @@ pub fn command_modifier_pressed(keyboard: &ButtonInput<KeyCode>) -> bool {
 fn wheel_zoom_modifier_active() -> bool {
     #[cfg(not(target_arch = "wasm32"))]
     {
-        return false;
+        false
     }
     #[cfg(target_arch = "wasm32")]
     {
@@ -694,16 +724,24 @@ pub fn gamepad_shortcuts(
         }
         return;
     }
-    if pad.just_pressed(PadButton::Triangle) {
-        if let Err(error) = crate::bridge::delete_selection() {
-            crate::bridge::set_notice(crate::bridge::NoticeLevel::Error, error);
-        }
+    if pad.just_pressed(PadButton::Triangle)
+        && let Err(error) = crate::bridge::delete_selection()
+    {
+        crate::bridge::set_notice(crate::bridge::NoticeLevel::Error, error);
     }
 }
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
+
+    #[test]
+    fn web_gamepad_y_axis_is_normalized_to_up_positive() {
+        assert_eq!(normalize_web_axis(0, 0.5), 0.5);
+        assert_eq!(normalize_web_axis(1, 0.5), -0.5);
+        assert_eq!(normalize_web_axis(2, -0.5), -0.5);
+        assert_eq!(normalize_web_axis(3, -0.5), 0.5);
+    }
 
     #[test]
     fn native_mapping_distinguishes_shoulders_and_triggers() {
@@ -741,5 +779,25 @@ mod tests {
             native_pad_button(GamepadButton::Other((HID_BUTTON_PAGE << 16) | 13)),
             None
         );
+    }
+
+    #[test]
+    fn guide_scroll_uses_up_positive_stick_and_repeats_dpad() {
+        assert!(guide_stick_scroll(1.0, 0.5) < 0.0);
+        assert!(guide_stick_scroll(-1.0, 0.5) > 0.0);
+
+        let mut repeat = 0.0;
+        assert_eq!(
+            guide_repeat_scroll(&mut repeat, 0.016, -1.0),
+            -GUIDE_DPAD_STEP
+        );
+        assert_eq!(guide_repeat_scroll(&mut repeat, 0.016, -1.0), 0.0);
+        assert_eq!(guide_repeat_scroll(&mut repeat, 1.0, -1.0), 0.0);
+        assert_eq!(
+            guide_repeat_scroll(&mut repeat, 0.016, -1.0),
+            -GUIDE_DPAD_STEP
+        );
+        assert_eq!(guide_repeat_scroll(&mut repeat, 0.016, 0.0), 0.0);
+        assert_eq!(repeat, 0.0);
     }
 }

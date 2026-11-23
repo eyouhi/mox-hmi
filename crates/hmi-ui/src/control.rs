@@ -92,7 +92,6 @@ pub fn start() {
     #[cfg(not(target_arch = "wasm32"))]
     {
         *AI_CONNECTION.write() = AiConnection::Disabled;
-        return;
     }
     #[cfg(target_arch = "wasm32")]
     {

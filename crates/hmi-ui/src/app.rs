@@ -1,6 +1,7 @@
 use crate::bridge::{self, EngineStatus, NoticeLevel, WorkspaceMode};
 use crate::ui::{
     ai_control::AiControlPanel,
+    axis_gizmo::AxisGizmo3D,
     controller_tuning::ControllerTuningHud,
     device_details::DeviceDetails,
     gamepad_menu::GamepadMenuHud,
@@ -59,6 +60,11 @@ pub fn App() -> Element {
     let _ = bridge::ACTIVE_SCREEN();
     let _ = bridge::DOCUMENT_REVISION();
     let active_screen = bridge::active_screen_snapshot();
+    let _ = bridge::GAMEPAD_STATUS();
+    let gamepad_connected = bridge::gamepad_status().connected;
+    let is_three_d = active_screen
+        .as_ref()
+        .is_some_and(|screen| !screen.is_two_d());
     let loading_screen_name = active_screen
         .as_ref()
         .map(|screen| screen.name().to_string())
@@ -80,13 +86,16 @@ pub fn App() -> Element {
     let mut screen_loading = use_signal(|| false);
     let mut screen_loading_token = use_signal(|| 0u64);
     let previous_screen = use_hook(|| Rc::new(RefCell::new(bridge::active_screen())));
-    let edit_hint = if active_screen
-        .as_ref()
-        .is_some_and(|screen| screen.is_two_d())
-    {
-        "拖动/框选 · ⇧ 或 ⌘ 点击多选 · ⌘C/V/X · 空格/中键平移 · F 聚焦 · 手柄 L3+Create 菜单"
+    let edit_hint = if is_three_d {
+        if gamepad_connected {
+            "左摇杆相对镜头移动 · 右摇杆视角 · 空白拖框选 · L3+Create 组件库/数据字典"
+        } else {
+            "拖设备移动 · 空白拖框选 · Option+左拖旋转 · WASD 沿地移动 · Q/E 升降"
+        }
+    } else if gamepad_connected {
+        "左摇杆移动 · 右摇杆平移 · 空白拖框选 · L3+Create 组件库/数据字典"
     } else {
-        "拖设备移动 · 空白拖框选 · Option+左拖旋转 · ⌘C/V/X · 手柄 L3+Create 菜单"
+        "拖动/框选 · ⇧ 或 ⌘ 点击多选 · ⌘C/V/X · 空格/中键平移 · F 聚焦"
     };
 
     #[cfg(target_arch = "wasm32")]
@@ -179,7 +188,6 @@ pub fn App() -> Element {
                 #[cfg(not(target_arch = "wasm32"))]
                 {
                     let _ = (&event, &modifiers);
-                    return;
                 }
                 #[cfg(target_arch = "wasm32")]
                 {
@@ -229,9 +237,9 @@ pub fn App() -> Element {
                     {canvas_element(screen_loading() || engine_starting)}
                     p { id: "canvas-help", class: "sr-only",
                         if cfg!(target_arch = "wasm32") {
-                            "画布内容由 WebGPU 渲染。点击或 Shift 点击多选，空白处拖动框选；⌘A 全选，⌘C/⌘V/⌘X 复制、粘贴、剪切，⌘D 原地复制，Delete 删除，⌘Z 撤销。2D 方向键轻推，Q/E 旋转，F 聚焦；3D Option 加左键拖动旋转视角，Shift 加左键拖动移动选中设备，方向键旋转视角，WASD 移动设备，Q/E 调整高度。DualSense 触摸板可进入单个设备的数值参数模式。"
+                            "画布内容由 WebGPU 渲染。点击或 Shift 点击多选，空白处拖动框选；⌘A 全选，⌘C/⌘V/⌘X 复制、粘贴、剪切，⌘D 原地复制，Delete 删除，⌘Z 撤销。2D 方向键轻推，Q/E 旋转，F 聚焦；3D Option 加左键拖动旋转视角，Shift 加左键拖动移动选中设备，方向键旋转视角，WASD 沿地面移动，Q/E 调整 Z 高度。DualSense 左摇杆相对镜头移动，右摇杆旋转视角，L3+Create 打开组件库和数据字典。"
                         } else {
-                            "画布内容由 Bevy wgpu 渲染。点击或 Shift 点击多选，空白处拖动框选；⌘A 全选，⌘C/⌘V/⌘X 复制、粘贴、剪切，⌘D 原地复制，Delete 删除，⌘Z 撤销。2D 方向键轻推，Q/E 旋转，F 聚焦；3D Option 加左键拖动旋转视角，Shift 加左键拖动移动选中设备，方向键旋转视角，WASD 移动设备，Q/E 调整高度。DualSense 触摸板可进入单个设备的数值参数模式。"
+                            "画布内容由 Bevy wgpu 渲染。点击或 Shift 点击多选，空白处拖动框选；⌘A 全选，⌘C/⌘V/⌘X 复制、粘贴、剪切，⌘D 原地复制，Delete 删除，⌘Z 撤销。2D 方向键轻推，Q/E 旋转，F 聚焦；3D Option 加左键拖动旋转视角，Shift 加左键拖动移动选中设备，方向键旋转视角，WASD 沿地面移动，Q/E 调整 Z 高度。DualSense 左摇杆相对镜头移动，右摇杆旋转视角，L3+Create 打开组件库和数据字典。"
                         }
                     }
                     if screen_loading() || engine_starting {
@@ -254,6 +262,9 @@ pub fn App() -> Element {
                         }
                     }
                     if !run_mode {
+                        if is_three_d {
+                            AxisGizmo3D {}
+                        }
                         div { class: "canvas-hint-bar", "data-testid": "canvas-hints",
                             span { class: "canvas-hint-copy", "{edit_hint}" }
                             button {

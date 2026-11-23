@@ -99,7 +99,8 @@ const LOG_HOOK: &str = r#"
 
 macro_rules! ensure {
     ($condition:expr, $($arg:tt)*) => {
-        if !$condition {
+        let passed = $condition;
+        if !passed {
             return Err(format!($($arg)*));
         }
     };
@@ -528,6 +529,7 @@ impl Harness {
         self.click_at(rect.x + rect.width / 2.0, rect.y + rect.height / 2.0)?;
         self.wait_text("selection-id", "node.3d.ahu", Duration::from_secs(5))?;
         self.wait_text("scene-mode", "3D", Duration::from_secs(5))?;
+        self.wait_visible("axis-gizmo", Duration::from_secs(5))?;
         Ok(())
     }
 
@@ -631,7 +633,7 @@ impl Harness {
         ensure!(!label.is_null(), "冷冻水阀标签没有布局区域");
         ensure!(!label["point"].is_null(), "冷冻水阀标签没有设备投影点");
         let x_before = self.input_value("node-position-x")?;
-        let z_before = self.input_value("node-position-z")?;
+        let y_before = self.input_value("node-position-y")?;
         let valve_x = label["point"]["x"].as_f64().unwrap_or(0.0);
         let valve_y = label["point"]["y"].as_f64().unwrap_or(0.0);
         self.drag(
@@ -647,14 +649,14 @@ impl Harness {
             Duration::from_secs(5),
         )?;
         let x_after = self.input_value("node-position-x")?;
-        let z_after = self.input_value("node-position-z")?;
+        let y_after = self.input_value("node-position-y")?;
         ensure!(
-            (x_after.as_str(), z_after.as_str()) != (x_before.as_str(), z_before.as_str()),
+            (x_after.as_str(), y_after.as_str()) != (x_before.as_str(), y_before.as_str()),
             "从场景树选中的冷冻水阀没有移动"
         );
         self.click("undo-button")?;
         self.wait_value("node-position-x", "0", Duration::from_secs(5))?;
-        self.wait_value("node-position-z", "1.9", Duration::from_secs(5))?;
+        self.wait_value("node-position-y", "1.9", Duration::from_secs(5))?;
         Ok(())
     }
 
@@ -699,9 +701,9 @@ impl Harness {
         let project_name = self.text("project-name")?;
         self.upload_invalid_import()?;
         self.wait_until("导入错误提示可见", Duration::from_secs(10), || {
-            Ok(self.eval_bool(
+            self.eval_bool(
                 "!!document.querySelector('[data-testid=\"notice\"][data-level=\"error\"]')",
-            )?)
+            )
         })?;
         ensure!(
             self.text("project-name")? == project_name,
@@ -875,7 +877,7 @@ impl Harness {
 
     pub(crate) fn wait_visible(&self, testid: &str, timeout: Duration) -> Result<(), String> {
         self.wait_until(&format!("{testid} 可见"), timeout, || {
-            Ok(self.visible_testid(testid)?)
+            self.visible_testid(testid)
         })
     }
 
@@ -1652,6 +1654,25 @@ impl Harness {
             Duration::from_secs(5),
         )?;
         self.wait_text("guide-content", "拖拽设备", Duration::from_secs(5))?;
+        self.click("guide-tab-gamepad")?;
+        self.wait_text("guide-content", "组件库：手柄添加", Duration::from_secs(5))?;
+        self.wait_text(
+            "guide-content",
+            "数据字典：浏览与选中 Tag",
+            Duration::from_secs(5),
+        )?;
+        ensure!(
+            self.eval_bool(
+                "(() => { const el = document.querySelector('[data-testid=\"guide-content\"]'); return el ? el.scrollHeight > el.clientHeight : false; })()"
+            )?,
+            "手柄操作指引未形成独立滚动区域"
+        );
+        ensure!(
+            self.eval_bool(
+                "(() => { const el = document.querySelector('[data-testid=\"guide-content\"]'); el.scrollTop = el.scrollHeight; return el.scrollTop + el.clientHeight >= el.scrollHeight - 1; })()"
+            )?,
+            "手柄操作指引无法滚动到底部"
+        );
         self.click("guide-close")?;
         self.wait_absent("guide-dialog", Duration::from_secs(5))?;
 

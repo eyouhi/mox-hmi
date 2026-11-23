@@ -7,12 +7,16 @@ enum MenuLevel {
     #[default]
     Root,
     Add,
+    Tags,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 enum MenuAction {
     OpenAdd,
     Add(&'static str),
+    OpenTags,
+    SelectTag { id: String, name: String },
+    OpenGamepadGuide,
     NewScreen(bool),
     CycleScreen(isize),
     Back,
@@ -58,7 +62,7 @@ pub fn gamepad_menu(pad: Res<GamepadState>, mut state: ResMut<GamepadMenuState>)
     }
 
     if pad.just_pressed(PadButton::Circle) {
-        if state.level == MenuLevel::Add {
+        if matches!(state.level, MenuLevel::Add | MenuLevel::Tags) {
             open_root(&mut state);
         } else {
             close(&mut state);
@@ -109,6 +113,22 @@ fn execute(action: MenuAction, state: &mut GamepadMenuState) {
             }
             close(state);
         }
+        MenuAction::OpenTags => {
+            open_tags(state);
+        }
+        MenuAction::SelectTag { id, name } => {
+            *crate::bridge::SELECTED_TAG.write() = Some(id);
+            crate::bridge::set_notice(
+                crate::bridge::NoticeLevel::Info,
+                format!("数据字典已选中：{name}；可用触控板查看和编辑详情"),
+            );
+            close(state);
+        }
+        MenuAction::OpenGamepadGuide => {
+            crate::bridge::set_guide_section(crate::bridge::GuideSection::Gamepad);
+            crate::bridge::set_guide_open(true);
+            close(state);
+        }
         MenuAction::NewScreen(three_d) => {
             match crate::bridge::create_screen(three_d) {
                 Ok(_) => crate::bridge::set_notice(
@@ -138,8 +158,18 @@ fn open_root(state: &mut GamepadMenuState) {
     state.items = vec![
         MenuEntry {
             label: add_menu_title(),
-            detail: "进入组件列表".to_string(),
+            detail: "进入组件库".to_string(),
             action: MenuAction::OpenAdd,
+        },
+        MenuEntry {
+            label: "数据字典".to_string(),
+            detail: "浏览 Tag 与实时值".to_string(),
+            action: MenuAction::OpenTags,
+        },
+        MenuEntry {
+            label: "手柄操作说明".to_string(),
+            detail: "画面 / 组件库 / 数据字典".to_string(),
+            action: MenuAction::OpenGamepadGuide,
         },
         MenuEntry {
             label: "新建 3D 机房画面".to_string(),
@@ -162,6 +192,39 @@ fn open_root(state: &mut GamepadMenuState) {
             action: MenuAction::CycleScreen(1),
         },
     ];
+    publish(state);
+}
+
+fn open_tags(state: &mut GamepadMenuState) {
+    let project = crate::bridge::project();
+    let snapshot = crate::bridge::tag_snapshot();
+    state.open = true;
+    state.level = MenuLevel::Tags;
+    state.index = 0;
+    let mut items = project
+        .tags
+        .iter()
+        .map(|tag| {
+            let value = snapshot
+                .get(&tag.id)
+                .map(|value| value.display_text())
+                .unwrap_or_else(|| "—".to_string());
+            MenuEntry {
+                label: tag.name.clone(),
+                detail: format!("{} · {value}", tag.id),
+                action: MenuAction::SelectTag {
+                    id: tag.id.clone(),
+                    name: tag.name.clone(),
+                },
+            }
+        })
+        .collect::<Vec<_>>();
+    items.push(MenuEntry {
+        label: "返回".to_string(),
+        detail: "回到手柄菜单".to_string(),
+        action: MenuAction::Back,
+    });
+    state.items = items;
     publish(state);
 }
 
@@ -198,10 +261,12 @@ fn publish(state: &GamepadMenuState) {
             Some(Screen::ThreeD { .. }) => "添加 3D 设备",
             None => "添加组件",
         },
+        MenuLevel::Tags => "数据字典",
     };
     let hint = match state.level {
         MenuLevel::Root => "↑↓ 选择 · × 执行 · ○ 关闭（也可再按 L3+Create）",
         MenuLevel::Add => "↑↓ 选择 · × 添加到画面 · ○ 返回",
+        MenuLevel::Tags => "↑↓ 浏览 · × 在数据字典中选中 · ○ 返回",
     };
     crate::bridge::set_gamepad_menu_hud(Some(crate::bridge::GamepadMenuHud {
         title: title.to_string(),

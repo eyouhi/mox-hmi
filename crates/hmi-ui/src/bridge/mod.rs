@@ -105,17 +105,20 @@ pub enum GuideSection {
     Start,
     TwoD,
     ThreeD,
+    Gamepad,
 }
 
 impl GuideSection {
     pub fn next(self, direction: isize) -> Self {
         match (self, direction.is_negative()) {
-            (GuideSection::Start, true) => GuideSection::ThreeD,
+            (GuideSection::Start, true) => GuideSection::Gamepad,
             (GuideSection::Start, false) => GuideSection::TwoD,
             (GuideSection::TwoD, true) => GuideSection::Start,
             (GuideSection::TwoD, false) => GuideSection::ThreeD,
             (GuideSection::ThreeD, true) => GuideSection::TwoD,
-            (GuideSection::ThreeD, false) => GuideSection::Start,
+            (GuideSection::ThreeD, false) => GuideSection::Gamepad,
+            (GuideSection::Gamepad, true) => GuideSection::ThreeD,
+            (GuideSection::Gamepad, false) => GuideSection::Start,
         }
     }
 }
@@ -220,6 +223,13 @@ pub struct SceneLabel3D {
     pub visible: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct AxisGizmo3D {
+    pub x: [f32; 2],
+    pub y: [f32; 2],
+    pub z: [f32; 2],
+}
+
 pub static DOCUMENT_REVISION: GlobalSignal<u64> = Signal::global(|| 1);
 pub static TAG_REVISION: GlobalSignal<u64> = Signal::global(|| 1);
 pub static SELECTED_NODE: GlobalSignal<Option<String>> = Signal::global(|| None);
@@ -230,12 +240,14 @@ pub static NOTICE_REVISION: GlobalSignal<u64> = Signal::global(|| 0);
 pub static ENGINE_STATUS: GlobalSignal<EngineStatus> = Signal::global(|| EngineStatus::Starting);
 pub static SAVE_STATUS: GlobalSignal<SaveStatus> = Signal::global(|| SaveStatus::Saved);
 pub static VIEW_LABELS_3D: GlobalSignal<Vec<SceneLabel3D>> = Signal::global(Vec::new);
+pub static AXIS_GIZMO_3D: GlobalSignal<Option<AxisGizmo3D>> = Signal::global(|| None);
 pub static CAMERA_RESET_REVISION: GlobalSignal<u32> = Signal::global(|| 0);
 pub static WEBGPU_READY: GlobalSignal<Option<bool>> = Signal::global(|| None);
 pub static FIELD_ERROR_ANNOUNCEMENT: GlobalSignal<Option<String>> = Signal::global(|| None);
 pub static RUNTIME_ONLY: GlobalSignal<bool> = Signal::global(|| false);
 pub static GUIDE_OPEN: GlobalSignal<bool> = Signal::global(|| false);
 pub static GAMEPAD_STATUS: GlobalSignal<GamepadStatus> = Signal::global(GamepadStatus::default);
+pub static SELECTED_TAG: GlobalSignal<Option<String>> = Signal::global(|| None);
 pub static CONTROLLER_TUNING_HUD: GlobalSignal<Option<ControllerTuningHud>> =
     Signal::global(|| None);
 pub static GAMEPAD_MENU_HUD: GlobalSignal<Option<GamepadMenuHud>> = Signal::global(|| None);
@@ -395,7 +407,7 @@ fn ensure_native_runtime() {
         }
 
         let mut dom = dioxus::core::VirtualDom::new(root);
-        let _ = dom.rebuild_in_place();
+        dom.rebuild_in_place();
         let runtime = dom.runtime();
         let guard = dioxus::core::RuntimeGuard::new(runtime);
         std::mem::forget(dom);
@@ -971,7 +983,7 @@ pub fn request_guide_scroll(delta: f64) {
 pub fn text_entry_focused() -> bool {
     #[cfg(not(target_arch = "wasm32"))]
     {
-        return NATIVE_TEXT_ENTRY_FOCUSED.load(Ordering::Relaxed);
+        NATIVE_TEXT_ENTRY_FOCUSED.load(Ordering::Relaxed)
     }
     #[cfg(target_arch = "wasm32")]
     {
@@ -1097,8 +1109,8 @@ pub fn gamepad_menu_open() -> bool {
 fn runtime_mode_requested() -> bool {
     #[cfg(not(target_arch = "wasm32"))]
     {
-        return std::env::var("MOX_HMI_RUNTIME_ONLY")
-            .is_ok_and(|value| matches!(value.as_str(), "1" | "true" | "on" | "yes"));
+        std::env::var("MOX_HMI_RUNTIME_ONLY")
+            .is_ok_and(|value| matches!(value.as_str(), "1" | "true" | "on" | "yes"))
     }
     #[cfg(target_arch = "wasm32")]
     {
@@ -1285,6 +1297,16 @@ pub fn set_scene_labels_3d(labels: Vec<SceneLabel3D>) {
 pub fn clear_scene_labels_3d() {
     if !VIEW_LABELS_3D.read().is_empty() {
         *VIEW_LABELS_3D.write() = Vec::new();
+    }
+}
+
+pub fn axis_gizmo_3d() -> Option<AxisGizmo3D> {
+    *AXIS_GIZMO_3D.read()
+}
+
+pub fn set_axis_gizmo_3d(gizmo: Option<AxisGizmo3D>) {
+    if *AXIS_GIZMO_3D.read() != gizmo {
+        *AXIS_GIZMO_3D.write() = gizmo;
     }
 }
 

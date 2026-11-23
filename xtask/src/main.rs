@@ -395,7 +395,7 @@ fn check_wasm_size(args: Vec<String>) -> Result<(), String> {
     ensure_tool("wasm-opt")?;
     let wasm = match args.first() {
         Some(path) => PathBuf::from(path),
-        None => find_release_wasm(&web_dir(false).parent().unwrap_or(Path::new(".")))?,
+        None => find_release_wasm(web_dir(false).parent().unwrap_or(Path::new(".")))?,
     };
     if !wasm.is_file() {
         return Err(format!(

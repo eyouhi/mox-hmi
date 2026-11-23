@@ -1,7 +1,10 @@
 use super::input::{self, GamepadState, PadButton};
 use super::plugin::CachedProject;
 use bevy::prelude::*;
-use hmi_core::{DeviceModel, DeviceNode, EditorCommand, Screen, UiNode, Widget2D};
+use hmi_core::{
+    DeviceModel, DeviceNode, EditorCommand, Screen, UiNode, Widget2D, display_axis_to_scene,
+    scene_to_display_axes,
+};
 
 const COARSE_MULTIPLIER: f32 = 10.0;
 
@@ -407,29 +410,32 @@ fn tuning_params_3d(node: &DeviceNode) -> Vec<TuningParam> {
     let axes = ["X", "Y", "Z"];
     let rotations = ["RX", "RY", "RZ"];
     let scales = ["SX", "SY", "SZ"];
+    let positions = scene_to_display_axes(node.position);
+    let rotation_values = scene_to_display_axes(node.rotation_deg);
+    let scale_values = scene_to_display_axes(node.scale);
     let mut params = Vec::new();
     for (axis, label) in axes.into_iter().enumerate() {
         params.push(TuningParam {
-            field: TuningField::Position(axis),
+            field: TuningField::Position(display_axis_to_scene(axis)),
             label,
             step: 0.1,
-            value: node.position[axis],
+            value: positions[axis],
         });
     }
     for (axis, label) in rotations.into_iter().enumerate() {
         params.push(TuningParam {
-            field: TuningField::Rotation3d(axis),
+            field: TuningField::Rotation3d(display_axis_to_scene(axis)),
             label,
             step: 1.0,
-            value: node.rotation_deg[axis],
+            value: rotation_values[axis],
         });
     }
     for (axis, label) in scales.into_iter().enumerate() {
         params.push(TuningParam {
-            field: TuningField::Scale(axis),
+            field: TuningField::Scale(display_axis_to_scene(axis)),
             label,
             step: 0.05,
-            value: node.scale[axis],
+            value: scale_values[axis],
         });
     }
     match &node.model {

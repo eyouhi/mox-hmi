@@ -20,8 +20,9 @@ pub use commands::{
 pub use demo::bas_demo;
 pub use error::HmiError;
 pub use geometry::{
-    CenterSnap, ResizeCorner, design_to_world, point_in_rotated_rect, point_near_polyline,
-    resize_rect, snap_rect_center, world_to_design,
+    CenterSnap, DISPLAY_AXIS_TO_STORAGE, ResizeCorner, design_to_world, display_axis_to_scene,
+    display_to_scene_axes, point_in_rotated_rect, point_near_polyline, resize_rect,
+    scene_to_display_axes, snap_rect_center, world_to_design,
 };
 pub use model::*;
 pub use persistence::{PersistenceError, STORAGE_KEY, export_filename, from_json, to_json};

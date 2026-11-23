@@ -1,6 +1,21 @@
 use crate::Rect;
 
 const SNAP_GUIDE_EPSILON: f32 = 0.01;
+pub const DISPLAY_AXIS_TO_STORAGE: [usize; 3] = [0, 2, 1];
+
+/// 3D nodes are stored in the renderer's Y-up space. The editor exposes a
+/// conventional Z-up frame instead, so keep the conversion in one place.
+pub fn scene_to_display_axes(values: [f32; 3]) -> [f32; 3] {
+    [values[0], values[2], values[1]]
+}
+
+pub fn display_to_scene_axes(values: [f32; 3]) -> [f32; 3] {
+    [values[0], values[2], values[1]]
+}
+
+pub fn display_axis_to_scene(axis: usize) -> usize {
+    DISPLAY_AXIS_TO_STORAGE.get(axis).copied().unwrap_or(axis)
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ResizeCorner {

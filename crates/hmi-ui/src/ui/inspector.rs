@@ -8,6 +8,7 @@ use dioxus::prelude::*;
 use hmi_core::{
     BarDirection, Binding, BindingMapping, BindingTarget, ButtonAction, DeviceModel, DeviceNode,
     EditorCommand, EquipmentKind, HexColor, TagValueType, TextAlign, UiNode, Widget2D,
+    display_axis_to_scene, scene_to_display_axes,
 };
 
 #[component]
@@ -890,16 +891,17 @@ fn Inspector3D(screen_id: String, node: DeviceNode) -> Element {
             }
 
             InspectorSection { title: "3D 变换",
+                p { class: "axis-note", "坐标约定：X 左右 · Y 前后 · Z 垂直地面" }
                 AxisFields {
                     labels: ["X", "Y", "Z"],
                     test_ids: ["node-position-x", "node-position-y", "node-position-z"],
-                    values: node.position,
+                    values: scene_to_display_axes(node.position),
                     disabled: locked,
                     on_commit: {
                         let screen_id = screen_id.clone();
                         let mut node = node.clone();
                         move |(axis, value): (usize, f32)| {
-                            node.position[axis] = value;
+                            node.position[display_axis_to_scene(axis)] = value;
                             update_3d(&screen_id, node.clone());
                         }
                     },
@@ -907,13 +909,13 @@ fn Inspector3D(screen_id: String, node: DeviceNode) -> Element {
                 AxisFields {
                     labels: ["RX", "RY", "RZ"],
                     test_ids: ["node-rotation-x", "node-rotation-y", "node-rotation-z"],
-                    values: node.rotation_deg,
+                    values: scene_to_display_axes(node.rotation_deg),
                     disabled: locked,
                     on_commit: {
                         let screen_id = screen_id.clone();
                         let mut node = node.clone();
                         move |(axis, value): (usize, f32)| {
-                            node.rotation_deg[axis] = value;
+                            node.rotation_deg[display_axis_to_scene(axis)] = value;
                             update_3d(&screen_id, node.clone());
                         }
                     },
@@ -921,13 +923,13 @@ fn Inspector3D(screen_id: String, node: DeviceNode) -> Element {
                 AxisFields {
                     labels: ["SX", "SY", "SZ"],
                     test_ids: ["node-scale-x", "node-scale-y", "node-scale-z"],
-                    values: node.scale,
+                    values: scene_to_display_axes(node.scale),
                     disabled: locked,
                     on_commit: {
                         let screen_id = screen_id.clone();
                         let mut node = node.clone();
                         move |(axis, value): (usize, f32)| {
-                            node.scale[axis] = value.max(0.01);
+                            node.scale[display_axis_to_scene(axis)] = value.max(0.01);
                             update_3d(&screen_id, node.clone());
                         }
                     },

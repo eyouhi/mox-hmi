@@ -15,6 +15,16 @@ fn design_world_round_trip() {
 }
 
 #[test]
+fn display_axes_keep_z_vertical() {
+    let scene = [1.0, 2.0, 3.0];
+    let display = scene_to_display_axes(scene);
+    assert_eq!(display, [1.0, 3.0, 2.0]);
+    assert_eq!(display_to_scene_axes(display), scene);
+    assert_eq!(display_axis_to_scene(2), 1);
+    assert_eq!(display_axis_to_scene(1), 2);
+}
+
+#[test]
 fn rotated_rect_hit_test_respects_rotation() {
     let rect = Rect {
         x: 100.0,

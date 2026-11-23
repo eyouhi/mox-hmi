@@ -201,11 +201,13 @@ pub fn run(args: Vec<String>) -> Result<(), String> {
         }
         harness.click_selector("button[aria-controls=\"ai-tunnel-body\"]")?;
         harness.wait_until("AI 操作隧道折叠", Duration::from_secs(5), || {
-            Ok(!harness.visible_selector("#ai-tunnel-body")?)
+            harness
+                .visible_selector("#ai-tunnel-body")
+                .map(|visible| !visible)
         })?;
         harness.click_by_label("展开 AI 操作隧道")?;
         harness.wait_until("AI 操作隧道展开", Duration::from_secs(5), || {
-            Ok(harness.visible_selector("#ai-tunnel-body")?)
+            harness.visible_selector("#ai-tunnel-body")
         })?;
 
         let status = control.tool("mox_hmi_status", json!({}))?;
@@ -233,9 +235,9 @@ pub fn run(args: Vec<String>) -> Result<(), String> {
         }
         harness.wait_text("selection-id", "node.supply_fan", Duration::from_secs(10))?;
         harness.wait_until("AI 操作记录可见", Duration::from_secs(10), || {
-            Ok(harness.eval_bool(
+            harness.eval_bool(
                 "[...document.querySelectorAll('[data-testid=\"ai-activity\"]')].some((el) => el.textContent.includes('AI 选中送风机 SF-01'))",
-            )?)
+            )
         })?;
 
         let renamed = control.tool(
@@ -279,9 +281,9 @@ pub fn run(args: Vec<String>) -> Result<(), String> {
             Duration::from_secs(10),
         )?;
         harness.wait_until("AI 撤销记录可见", Duration::from_secs(10), || {
-            Ok(harness.eval_bool(
+            harness.eval_bool(
                 "[...document.querySelectorAll('[data-testid=\"ai-activity\"]')].some((el) => el.textContent.includes('AI 撤销刚才的重命名'))",
-            )?)
+            )
         })?;
 
         let webmcp_available = harness.eval_bool(
@@ -299,9 +301,9 @@ pub fn run(args: Vec<String>) -> Result<(), String> {
                 })()"#,
             )?;
             harness.wait_until("WebMCP 工具注册", Duration::from_secs(15), || {
-                Ok(harness.eval_bool(
+                harness.eval_bool(
                     "Array.isArray(window.__moxWebmcpTools) || !!window.__moxWebmcpError",
-                )?)
+                )
             })?;
             let error = harness
                 .eval("window.__moxWebmcpError")?
@@ -353,9 +355,9 @@ pub fn run(args: Vec<String>) -> Result<(), String> {
                 })()"#,
             )?;
             harness.wait_until("WebMCP 工具执行", Duration::from_secs(15), || {
-                Ok(harness.eval_bool(
+                harness.eval_bool(
                     "(!!window.__moxWebmcpStatus && !!window.__moxWebmcpResult) || !!window.__moxWebmcpExecuteError",
-                )?)
+                )
             })?;
             let error = harness
                 .eval("window.__moxWebmcpExecuteError")?
@@ -386,9 +388,9 @@ pub fn run(args: Vec<String>) -> Result<(), String> {
             }
             harness.wait_text("selection-id", "node.exhaust_fan", Duration::from_secs(10))?;
             harness.wait_until("WebMCP AI 操作记录可见", Duration::from_secs(10), || {
-                Ok(harness.eval_bool(
+                harness.eval_bool(
                     "[...document.querySelectorAll('[data-testid=\"ai-activity\"]')].some((el) => el.textContent.includes('WebMCP 选中排风机 EF-01'))",
-                )?)
+                )
             })?;
             println!("PASS: WebMCP tools");
         } else {

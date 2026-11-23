@@ -1,4 +1,5 @@
 pub mod ai_control;
+pub mod axis_gizmo;
 pub mod common;
 pub mod controller_tuning;
 pub mod device_details;

@@ -288,11 +288,13 @@ fn delete_screen(active_id: &str) {
 fn ComponentPalette() -> Element {
     let _ = bridge::DOCUMENT_REVISION();
     let _ = bridge::ACTIVE_SCREEN();
+    let _ = bridge::GAMEPAD_STATUS();
     let project = bridge::project();
     let active_id = bridge::active_screen().unwrap_or_else(|| project.startup_screen.clone());
     let is_two_d = project
         .screen(&active_id)
         .is_some_and(|screen| screen.is_two_d());
+    let gamepad_connected = bridge::gamepad_status().connected;
 
     rsx! {
         section { class: "panel-section palette-section", "data-testid": "component-palette",
@@ -320,6 +322,9 @@ fn ComponentPalette() -> Element {
                     PaletteButton { test_id: "add-pipe-3d", label: "水管", glyph: "━", kind: "pipe-3d" }
                     PaletteButton { test_id: "add-valve", label: "阀门", glyph: "◎", kind: "valve" }
                 }
+            }
+            if gamepad_connected {
+                p { class: "panel-gamepad-hint", "手柄：L3+Create → 组件库，↑↓ 选择，× 添加" }
             }
         }
     }
@@ -355,9 +360,11 @@ fn add_node(kind: &str) {
 fn TagPanel() -> Element {
     let _ = bridge::DOCUMENT_REVISION();
     let _ = bridge::TAG_REVISION();
+    let _ = bridge::GAMEPAD_STATUS();
     let project = bridge::project();
     let snapshot = bridge::tag_snapshot();
-    let mut selected_tag = use_signal(|| Option::<String>::None);
+    let selected_tag = bridge::SELECTED_TAG();
+    let gamepad_connected = bridge::gamepad_status().connected;
 
     rsx! {
         section { class: "panel-section tag-section", "data-testid": "tag-list",
@@ -384,19 +391,22 @@ fn TagPanel() -> Element {
                             simulator: SimulatorKind::Constant,
                         };
                         match bridge::execute(EditorCommand::AddTag { tag }) {
-                            Ok(_) => selected_tag.set(Some(id)),
+                            Ok(_) => *bridge::SELECTED_TAG.write() = Some(id),
                             Err(error) => report_error(error),
                         }
                     },
                     "+ Tag"
                 }
             }
+            if gamepad_connected {
+                p { class: "panel-gamepad-hint", "手柄：L3+Create → 数据字典，可浏览并选中 Tag" }
+            }
             ul { class: "tag-rows",
                 for tag in project.tags.iter() {
                     {
                         let tag_id = tag.id.clone();
                         let row_id = format!("tag-row-{}", sanitize_test_id(&tag_id));
-                        let is_selected = selected_tag().as_deref() == Some(tag_id.as_str());
+                        let is_selected = selected_tag.as_deref() == Some(tag_id.as_str());
                         let value = snapshot
                             .get(&tag_id)
                             .map(|value| value.display_text())
@@ -409,7 +419,7 @@ fn TagPanel() -> Element {
                                     "data-testid": "{row_id}",
                                     onclick: {
                                         let tag_id = tag_id.clone();
-                                        move |_| selected_tag.set(Some(tag_id.clone()))
+                                        move |_| *bridge::SELECTED_TAG.write() = Some(tag_id.clone())
                                     },
                                     span { class: "tag-name", "{tag.name}" }
                                     span { class: "tag-value", "{value}" }
@@ -419,12 +429,12 @@ fn TagPanel() -> Element {
                     }
                 }
             }
-            if let Some(tag_id) = selected_tag() {
+            if let Some(tag_id) = selected_tag {
                 if let Some(tag) = project.tag(&tag_id).cloned() {
                     TagEditor {
                         key: "{tag.id}-{bridge::DOCUMENT_REVISION()}",
                         tag,
-                        on_deleted: move |_| selected_tag.set(None),
+                        on_deleted: move |_| *bridge::SELECTED_TAG.write() = None,
                     }
                 }
             }
