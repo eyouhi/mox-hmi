@@ -16,8 +16,12 @@ use web_sys::{CloseEvent, Event, MessageEvent, WebSocket};
 
 #[cfg(target_arch = "wasm32")]
 const RECONNECT_DELAY_MS: i32 = 3_000;
-#[cfg(target_arch = "wasm32")]
 const MAX_ACTIVITIES: usize = 20;
+
+#[cfg(not(target_arch = "wasm32"))]
+use std::sync::atomic::{AtomicU64, Ordering};
+#[cfg(not(target_arch = "wasm32"))]
+use time::OffsetDateTime;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AiConnection {
@@ -55,6 +59,9 @@ pub struct AiActivity {
 
 pub static AI_CONNECTION: GlobalSignal<AiConnection> = Signal::global(|| AiConnection::Disabled);
 pub static AI_ACTIVITY: GlobalSignal<Vec<AiActivity>> = Signal::global(Vec::new);
+
+#[cfg(not(target_arch = "wasm32"))]
+static NEXT_NATIVE_ACTIVITY: AtomicU64 = AtomicU64::new(1);
 
 #[cfg(target_arch = "wasm32")]
 #[derive(Debug, Clone)]
@@ -110,6 +117,45 @@ pub fn reconnect() {
 
 pub fn clear_activities() {
     AI_ACTIVITY.write().clear();
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn mark_native_ai_connected() {
+    if matches!(
+        &*AI_CONNECTION.peek(),
+        AiConnection::Disabled | AiConnection::Disconnected(_, _)
+    ) {
+        *AI_CONNECTION.write() = AiConnection::Connected("native://mcp".to_string());
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn begin_native_activity(label: &str, detail: &str, status: AiStatus) -> u64 {
+    let id = NEXT_NATIVE_ACTIVITY.fetch_add(1, Ordering::Relaxed);
+    let now = OffsetDateTime::now_local().unwrap_or_else(|_| OffsetDateTime::now_utc());
+    let time = format!("{:02}:{:02}:{:02}", now.hour(), now.minute(), now.second());
+    let mut activities = AI_ACTIVITY.write();
+    activities.insert(
+        0,
+        AiActivity {
+            id,
+            time,
+            label: label.to_string(),
+            detail: detail.to_string(),
+            status,
+        },
+    );
+    activities.truncate(MAX_ACTIVITIES);
+    id
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn finish_native_activity(id: u64, status: AiStatus, detail: &str) {
+    let mut activities = AI_ACTIVITY.write();
+    if let Some(activity) = activities.iter_mut().find(|activity| activity.id == id) {
+        activity.status = status;
+        activity.detail = detail.to_string();
+    }
 }
 
 #[cfg(target_arch = "wasm32")]

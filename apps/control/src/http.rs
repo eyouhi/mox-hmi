@@ -110,6 +110,7 @@ async fn mcp_post(
         )
             .into_response();
     }
+    state.hub.mark_ai_connected();
 
     let request: Value = match serde_json::from_slice(&body) {
         Ok(request) => request,

@@ -4,7 +4,7 @@ use std::{
     collections::HashMap,
     sync::{
         Arc,
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
     },
 };
 use tokio::sync::{Mutex, mpsc, oneshot};
@@ -22,6 +22,7 @@ pub struct ControlHub {
 struct HubInner {
     browser: Mutex<Option<BrowserHandle>>,
     last_state: Mutex<ControlState>,
+    ai_connected: AtomicBool,
 }
 
 #[derive(Clone)]
@@ -48,6 +49,7 @@ impl ControlHub {
             inner: Arc::new(HubInner {
                 browser: Mutex::new(None),
                 last_state: Mutex::new(ControlState::default()),
+                ai_connected: AtomicBool::new(false),
             }),
             token,
             next_session_id: Arc::new(AtomicU64::new(1)),
@@ -59,6 +61,14 @@ impl ControlHub {
             Some(expected) => candidate == Some(expected.as_str()),
             None => true,
         }
+    }
+
+    pub fn mark_ai_connected(&self) {
+        self.inner.ai_connected.store(true, Ordering::Relaxed);
+    }
+
+    pub fn ai_connected(&self) -> bool {
+        self.inner.ai_connected.load(Ordering::Relaxed)
     }
 
     pub async fn register(

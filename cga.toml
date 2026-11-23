@@ -1,0 +1,35 @@
+# CGA intentionally reports allocation, destructor, formatter, lock and async
+# machinery as panic-capable. For this std/async desktop application those paths
+# are unavoidable and belong to the runtime, not to MOX HMI domain logic.
+#
+# Keep MOX HMI crates out of this list so direct panic paths in our code still
+# fail `cargo cga check --config-path cga.toml`.
+whitelist = [
+  { crate = "alloc" },
+  { crate = "core" },
+  { crate = "std" },
+  { crate = "anyrender" },
+  { crate = "axum" },
+  { crate = "bevy" },
+  { crate = "blitz_dom" },
+  { crate = "blitz_shell" },
+  { crate = "dioxus" },
+  { crate = "dioxus_core" },
+  { crate = "dioxus_native" },
+  { crate = "flate2" },
+  { crate = "fontoxide_ttlib" },
+  { crate = "futures_timer" },
+  { crate = "headless_chrome" },
+  { crate = "miniz_oxide" },
+  { crate = "parking_lot" },
+  { crate = "serde_json" },
+  { crate = "smallvec" },
+  { crate = "tokio" },
+  { crate = "tower_http" },
+  { crate = "url" },
+  { crate = "wgpu" },
+]
+
+[options]
+allow_async_panic = true
+allow_assert = true

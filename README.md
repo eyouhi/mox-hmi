@@ -289,6 +289,14 @@ cargo x verify
 
 该命令依次执行格式检查、workspace 单元测试、WASM 编译检查、21 条浏览器交互验收，以及 MCP 控制隧道验收。浏览器套件会自行启动 `dx serve`，使用 Chrome for Testing 的 WebGPU 参数，并在结束时清理服务器。流程覆盖 WebGPU 启动、2D/3D 编辑、鼠标/触控板/键盘/DualSense、框选、多选、剪贴板、组拖拽、触觉路径、可访问性和窄窗重排。
 
+检查潜在 panic 路径：
+
+```bash
+cargo cga check --config-path cga.toml
+```
+
+`cga.toml` 只放行标准库、异步运行时、渲染框架和测试工具自身的分配、析构与锁实现；`mox-hmi-*` 业务 crate 不在白名单内。
+
 单独运行 E2E：
 
 ```bash

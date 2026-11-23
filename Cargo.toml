@@ -36,3 +36,10 @@ panic = "abort"
 # wasm-bindgen needs custom sections emitted by the linker. Final stripping is
 # performed by wasm-opt after binding; stripping here breaks LLVM 23 builds.
 strip = false
+
+# blitz-dom 0.3.0-beta.4 shipped before upstream #1244. Pointer movement can
+# race a DOM removal and hit a stale paint/hoisted/text node, which aborts the
+# native app in Node::with. Keep the published dependency graph and vendor only
+# that crate with the upstream fix until Dioxus/Blitz publishes a newer release.
+[patch.crates-io]
+blitz-dom = { path = "vendor/blitz-dom" }

@@ -45,6 +45,10 @@ pub fn App() -> Element {
     let webgpu = use_signal(|| None::<bool>);
     let engine_starting = bridge::ENGINE_STATUS() == EngineStatus::Starting;
     let mode = bridge::WORKSPACE_MODE();
+    let ai_connected = matches!(
+        crate::control::AI_CONNECTION(),
+        crate::control::AiConnection::Connected(_)
+    );
     let runtime_only = bridge::runtime_only();
     let _ = bridge::NOTICE_REVISION();
     let notice = bridge::notice();
@@ -151,6 +155,11 @@ pub fn App() -> Element {
     rsx! {
         {document_styles()}
         a { class: "skip-link", href: "#main-content", "跳到主画布" }
+        div {
+            class: if ai_connected { "ai-connection-frame is-visible" } else { "ai-connection-frame" },
+            "data-testid": "ai-connection-frame",
+            aria_hidden: "true",
+        }
         div {
             class: "sr-only",
             "data-testid": "field-error-live",

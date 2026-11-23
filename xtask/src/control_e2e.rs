@@ -169,6 +169,9 @@ pub fn run(args: Vec<String>) -> Result<(), String> {
     let result = (|| {
         harness.wait_ready()?;
         harness.wait_text("ai-connection", "已连接", Duration::from_secs(30))?;
+        if !harness.visible_selector(".ai-connection-frame.is-visible")? {
+            return Err("AI 已连接，但浅蓝紫渐变边框未显示".to_string());
+        }
 
         let initialized = control.request(
             "initialize",

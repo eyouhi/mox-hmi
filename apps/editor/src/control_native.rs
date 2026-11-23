@@ -11,10 +11,12 @@ use tokio::sync::mpsc as tokio_mpsc;
 struct NativeRequest {
     id: u64,
     action: String,
+    label: String,
     params: Value,
 }
 
 pub struct NativeControl {
+    hub: ControlHub,
     requests: Arc<Mutex<mpsc::Receiver<NativeRequest>>>,
     responses: tokio_mpsc::UnboundedSender<BrowserMessage>,
     handle: BrowserHandle,
@@ -49,14 +51,14 @@ impl NativeControl {
             loop {
                 tokio::select! {
                     message = out_rx.recv() => {
-                        let Some(ServerMessage::Request { id, action, params, .. }) = message else {
+                        let Some(ServerMessage::Request { id, action, label, params, .. }) = message else {
                             if out_rx.is_closed() {
                                 break;
                             }
                             continue;
                         };
                         if request_tx
-                            .send(NativeRequest { id, action, params })
+                            .send(NativeRequest { id, action, label, params })
                             .is_err()
                         {
                             break;
@@ -68,6 +70,7 @@ impl NativeControl {
             }
         });
         Ok(Self {
+            hub,
             requests: Arc::new(Mutex::new(request_rx)),
             responses: response_tx,
             handle,
@@ -76,30 +79,57 @@ impl NativeControl {
     }
 
     pub fn process(&self) {
+        if self.hub.ai_connected() {
+            mox_hmi_ui::control::mark_native_ai_connected();
+        }
         let Ok(requests) = self.requests.lock() else {
             return;
         };
         while let Ok(request) = requests.try_recv() {
             let started = Instant::now();
+            let response_activity = mox_hmi_ui::control::begin_native_activity(
+                &request.label,
+                &request.action,
+                mox_hmi_ui::control::AiStatus::Running,
+            );
             let result = mox_hmi_ui::control::run_action(&request.action, &request.params);
             let state = mox_hmi_ui::control::current_state();
             let message = match result {
-                Ok(result) => BrowserMessage::Response {
-                    id: request.id,
-                    ok: true,
-                    result,
-                    error: None,
-                    state,
-                    duration_ms: started.elapsed().as_millis() as u64,
-                },
-                Err(error) => BrowserMessage::Response {
-                    id: request.id,
-                    ok: false,
-                    result: Value::Null,
-                    error: Some(error),
-                    state,
-                    duration_ms: started.elapsed().as_millis() as u64,
-                },
+                Ok(result) => {
+                    let detail = result
+                        .get("summary")
+                        .and_then(Value::as_str)
+                        .unwrap_or(&request.action)
+                        .to_string();
+                    mox_hmi_ui::control::finish_native_activity(
+                        response_activity,
+                        mox_hmi_ui::control::AiStatus::Ok,
+                        &detail,
+                    );
+                    BrowserMessage::Response {
+                        id: request.id,
+                        ok: true,
+                        result,
+                        error: None,
+                        state,
+                        duration_ms: started.elapsed().as_millis() as u64,
+                    }
+                }
+                Err(error) => {
+                    mox_hmi_ui::control::finish_native_activity(
+                        response_activity,
+                        mox_hmi_ui::control::AiStatus::Error,
+                        &error,
+                    );
+                    BrowserMessage::Response {
+                        id: request.id,
+                        ok: false,
+                        result: Value::Null,
+                        error: Some(error),
+                        state,
+                        duration_ms: started.elapsed().as_millis() as u64,
+                    }
+                }
             };
             let _ = self.responses.send(message);
         }
