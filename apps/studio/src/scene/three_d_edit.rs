@@ -8,7 +8,6 @@ use hmi_core::{DeviceModel, DeviceNode, EditorCommand, Screen};
 const NUDGE_STEP: f32 = 0.1;
 const NUDGE_STEP_LARGE: f32 = 1.0;
 const STICK_SPEED: f32 = 2.4;
-const STICK_SPEED_VERTICAL: f32 = 1.2;
 const MARQUEE_DRAG_THRESHOLD: f32 = 6.0;
 
 #[derive(Resource, Default)]
@@ -127,20 +126,23 @@ pub fn three_d_edit(
         return;
     }
 
-    if input::keyboard_input_enabled() && !input::command_modifier_pressed(&keyboard) {
+    if input::keyboard_input_enabled()
+        && !input::command_modifier_pressed(&keyboard)
+        && !input::alt_pressed(&keyboard)
+    {
         let shift = input::shift_pressed(&keyboard);
         let step = if shift { NUDGE_STEP_LARGE } else { NUDGE_STEP };
         let mut delta = Vec3::ZERO;
-        if keyboard.just_pressed(KeyCode::KeyA) {
+        if keyboard.just_pressed(KeyCode::ArrowLeft) {
             delta.x -= step;
         }
-        if keyboard.just_pressed(KeyCode::KeyD) {
+        if keyboard.just_pressed(KeyCode::ArrowRight) {
             delta.x += step;
         }
-        if keyboard.just_pressed(KeyCode::KeyW) {
+        if keyboard.just_pressed(KeyCode::ArrowUp) {
             delta.z -= step;
         }
-        if keyboard.just_pressed(KeyCode::KeyS) {
+        if keyboard.just_pressed(KeyCode::ArrowDown) {
             delta.z += step;
         }
         if keyboard.just_pressed(KeyCode::KeyQ) {
@@ -186,7 +188,6 @@ pub fn three_d_edit(
     }
 
     let stick = pad.left_stick();
-    let vertical_mode = pad.pressed(PadButton::L3);
     if stick.length_squared() > 0.0 {
         let (right, forward) = camera_query
             .single()
@@ -200,12 +201,7 @@ pub fn three_d_edit(
         }
         if let Some(drag) = state.drag.as_mut() {
             let dt = time.delta_secs().min(0.05);
-            let speed = if vertical_mode {
-                STICK_SPEED_VERTICAL
-            } else {
-                STICK_SPEED
-            };
-            let delta = gamepad_translation(right, forward, stick, vertical_mode, speed, dt);
+            let delta = gamepad_translation(right, forward, stick, STICK_SPEED, dt);
             drag.translate_preview(delta);
             apply_preview_set(&visual_index, &mut transforms, &drag.previews);
         }
@@ -225,20 +221,11 @@ pub fn three_d_edit(
     if pad.just_pressed(PadButton::DpadRight) {
         dpad.x += NUDGE_STEP;
     }
-    if vertical_mode {
-        if pad.just_pressed(PadButton::DpadUp) {
-            dpad.y += NUDGE_STEP;
-        }
-        if pad.just_pressed(PadButton::DpadDown) {
-            dpad.y -= NUDGE_STEP;
-        }
-    } else {
-        if pad.just_pressed(PadButton::DpadUp) {
-            dpad.z -= NUDGE_STEP;
-        }
-        if pad.just_pressed(PadButton::DpadDown) {
-            dpad.z += NUDGE_STEP;
-        }
+    if pad.just_pressed(PadButton::DpadUp) {
+        dpad.y += NUDGE_STEP;
+    }
+    if pad.just_pressed(PadButton::DpadDown) {
+        dpad.y -= NUDGE_STEP;
     }
     if dpad != Vec3::ZERO {
         let Some(screen_id) = cached.screen_id.clone() else {
@@ -272,21 +259,8 @@ fn camera_ground_basis(camera: &GlobalTransform) -> (Vec3, Vec3) {
     )
 }
 
-fn gamepad_translation(
-    right: Vec3,
-    forward: Vec3,
-    stick: Vec2,
-    vertical: bool,
-    speed: f32,
-    dt: f32,
-) -> Vec3 {
-    let mut delta = right * stick.x * speed * dt;
-    if vertical {
-        delta.y += stick.y * speed * dt;
-    } else {
-        delta += forward * stick.y * speed * dt;
-    }
-    delta
+fn gamepad_translation(right: Vec3, forward: Vec3, stick: Vec2, speed: f32, dt: f32) -> Vec3 {
+    (right * stick.x + forward * stick.y) * speed * dt
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -732,15 +706,9 @@ mod tests {
     fn gamepad_stick_follows_camera_basis() {
         let right = Vec3::X;
         let forward = -Vec3::Z;
-        let horizontal = gamepad_translation(right, forward, Vec2::new(0.5, 0.0), false, 2.0, 1.0);
+        let horizontal = gamepad_translation(right, forward, Vec2::new(0.5, 0.0), 2.0, 1.0);
         assert_eq!(horizontal, Vec3::X);
-        let depth = gamepad_translation(right, forward, Vec2::new(0.0, 0.5), false, 2.0, 1.0);
+        let depth = gamepad_translation(right, forward, Vec2::new(0.0, 0.5), 2.0, 1.0);
         assert_eq!(depth, -Vec3::Z);
-    }
-
-    #[test]
-    fn vertical_mode_keeps_stick_x_on_ground_and_uses_up_positive_stick_y() {
-        let delta = gamepad_translation(Vec3::X, -Vec3::Z, Vec2::new(0.5, 0.5), true, 2.0, 1.0);
-        assert_eq!(delta, Vec3::new(1.0, 1.0, 0.0));
     }
 }

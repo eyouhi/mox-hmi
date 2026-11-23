@@ -17,7 +17,7 @@ pub fn GamepadMenuHud() -> Element {
             div { class: "gamepad-menu-head",
                 span { class: "gamepad-menu-mark", aria_hidden: "true", "PS" }
                 div {
-                    span { class: "eyebrow", "手柄快捷菜单" }
+                    span { class: "eyebrow", "手柄菜单" }
                     strong { "{hud.title}" }
                 }
                 span { class: "gamepad-menu-index", "{hud.index + 1} / {hud.items.len()}" }

@@ -48,6 +48,11 @@ pub fn Topbar() -> Element {
     } else {
         "手柄未连接"
     };
+    let gamepad_title = if gamepad.connected {
+        format!("{} · Options 打开手柄菜单，Create 打开指引", gamepad.id)
+    } else {
+        "连接 DualSense 后按任意键唤醒".to_string()
+    };
 
     rsx! {
         header { class: "topbar", "data-testid": "topbar",
@@ -88,11 +93,7 @@ pub fn Topbar() -> Element {
                     "data-testid": "gamepad-status",
                     role: "status",
                     aria_live: "polite",
-                    title: if gamepad.connected {
-                        format!("{} · L3+Create 打开组件库 / 数据字典", gamepad.id)
-                    } else {
-                        "连接 DualSense 后按任意键唤醒".to_string()
-                    },
+                    title: gamepad_title,
                     "{gamepad_text}"
                 }
             }

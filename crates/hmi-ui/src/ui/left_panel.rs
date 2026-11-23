@@ -324,7 +324,7 @@ fn ComponentPalette() -> Element {
                 }
             }
             if gamepad_connected {
-                p { class: "panel-gamepad-hint", "手柄：L3+Create → 组件库，↑↓ 选择，× 添加" }
+                p { class: "panel-gamepad-hint", "手柄：Options → 添加组件，↑↓ 选择，× 添加" }
             }
         }
     }
@@ -399,7 +399,7 @@ fn TagPanel() -> Element {
                 }
             }
             if gamepad_connected {
-                p { class: "panel-gamepad-hint", "手柄：L3+Create → 数据字典，可浏览并选中 Tag" }
+                p { class: "panel-gamepad-hint", "手柄：Options → 数据字典，可浏览并选中 Tag" }
             }
             ul { class: "tag-rows",
                 for tag in project.tags.iter() {

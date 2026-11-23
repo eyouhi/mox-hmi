@@ -77,7 +77,7 @@ pub fn orbit_system(
     }
 
     if input::keyboard_input_enabled() && !input::command_modifier_pressed(&keyboard) {
-        apply_orbit_keyboard(&cached, &keyboard, &mut orbit);
+        apply_orbit_keyboard(&cached, &keyboard, time.delta_secs().min(0.05), &mut orbit);
     }
     if input::gamepad_input_enabled() && pad.connected && !crate::bridge::controller_tuning_active()
     {
@@ -122,25 +122,51 @@ pub fn orbit_system(
 fn apply_orbit_keyboard(
     cached: &CachedProject,
     keyboard: &ButtonInput<KeyCode>,
+    dt: f32,
     orbit: &mut OrbitCamera,
 ) {
-    if keyboard.pressed(KeyCode::ArrowLeft) {
-        orbit.yaw += 0.04;
+    if input::alt_pressed(keyboard) {
+        if keyboard.pressed(KeyCode::ArrowLeft) {
+            orbit.yaw += 1.4 * dt;
+        }
+        if keyboard.pressed(KeyCode::ArrowRight) {
+            orbit.yaw -= 1.4 * dt;
+        }
+        if keyboard.pressed(KeyCode::ArrowUp) {
+            orbit.pitch = (orbit.pitch + 1.0 * dt).clamp(-0.15, 1.25);
+        }
+        if keyboard.pressed(KeyCode::ArrowDown) {
+            orbit.pitch = (orbit.pitch - 1.0 * dt).clamp(-0.15, 1.25);
+        }
+    } else {
+        let mut pan = Vec3::ZERO;
+        let forward = Vec3::new(-orbit.yaw.sin(), 0.0, -orbit.yaw.cos());
+        let right = Vec3::new(orbit.yaw.cos(), 0.0, -orbit.yaw.sin());
+        if keyboard.pressed(KeyCode::KeyW) {
+            pan += forward;
+        }
+        if keyboard.pressed(KeyCode::KeyS) {
+            pan -= forward;
+        }
+        if keyboard.pressed(KeyCode::KeyD) {
+            pan += right;
+        }
+        if keyboard.pressed(KeyCode::KeyA) {
+            pan -= right;
+        }
+        if let Some(direction) = pan.try_normalize() {
+            orbit.focus += direction * orbit.distance * 1.2 * dt;
+        }
     }
-    if keyboard.pressed(KeyCode::ArrowRight) {
-        orbit.yaw -= 0.04;
-    }
-    if keyboard.pressed(KeyCode::ArrowUp) {
-        orbit.pitch = (orbit.pitch + 0.03).clamp(-0.15, 1.25);
-    }
-    if keyboard.pressed(KeyCode::ArrowDown) {
-        orbit.pitch = (orbit.pitch - 0.03).clamp(-0.15, 1.25);
-    }
+    let mut zoom: f32 = 0.0;
     if keyboard.pressed(KeyCode::Equal) || keyboard.pressed(KeyCode::NumpadAdd) {
-        orbit.distance = (orbit.distance * 0.97).clamp(6.0, 24.0);
+        zoom += 1.0;
     }
     if keyboard.pressed(KeyCode::Minus) || keyboard.pressed(KeyCode::NumpadSubtract) {
-        orbit.distance = (orbit.distance * 1.03).clamp(6.0, 24.0);
+        zoom -= 1.0;
+    }
+    if zoom.abs() > f32::EPSILON {
+        orbit.distance = (orbit.distance * (-zoom * 1.6 * dt).exp()).clamp(6.0, 24.0);
     }
     if keyboard.just_pressed(KeyCode::Home) {
         orbit.reset();
@@ -158,17 +184,7 @@ fn apply_orbit_gamepad(
 ) {
     let stick = pad.right_stick();
     if stick.length_squared() > 0.0 {
-        if pad.pressed(PadButton::L3) {
-            let mut basis = Transform::default();
-            orbit.apply(&mut basis);
-            let right = basis.right().as_vec3();
-            let up = basis.up().as_vec3();
-            let speed = orbit.distance * 0.9 * dt;
-            orbit.focus -= right * stick.x * speed;
-            orbit.focus += up * stick.y * speed;
-        } else {
-            apply_right_stick_orbit(orbit, stick, dt);
-        }
+        apply_right_stick_orbit(orbit, stick, dt);
     }
     let zoom = pad.right_trigger() - pad.left_trigger();
     if zoom.abs() > 0.01 {
@@ -186,10 +202,10 @@ fn apply_orbit_mouse_drag(
     pointer_on_canvas: bool,
     delta: Vec2,
 ) {
-    let orbit_modifier = keyboard.pressed(KeyCode::AltLeft) || keyboard.pressed(KeyCode::AltRight);
+    let orbit_modifier = input::alt_pressed(keyboard);
     if pointer_on_canvas
-        && mouse_buttons.pressed(MouseButton::Left)
-        && orbit_modifier
+        && ((mouse_buttons.pressed(MouseButton::Left) && orbit_modifier)
+            || mouse_buttons.pressed(MouseButton::Right))
         && delta.length_squared() > 0.0
     {
         orbit.yaw -= delta.x * 0.006;
@@ -227,9 +243,7 @@ fn apply_orbit_wheel(
         if !pointer_on_canvas {
             continue;
         }
-        let zoom_requested =
-            event.unit == MouseScrollUnit::Line || input::zoom_modifier_pressed(keyboard);
-        if zoom_requested {
+        if input::wheel_intent(event, keyboard) == input::WheelIntent::Zoom {
             let sensitivity = if event.unit == MouseScrollUnit::Line {
                 0.12
             } else {

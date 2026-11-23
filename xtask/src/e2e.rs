@@ -431,7 +431,11 @@ impl Harness {
         self.click("undo-button")?;
         self.click("node-row-node-ahu")?;
 
-        self.press_gamepad_button(3)?;
+        self.open_gamepad_menu()?;
+        self.gamepad_menu_down(1)?;
+        self.gamepad_menu_confirm()?;
+        self.gamepad_menu_down(5)?;
+        self.gamepad_menu_confirm()?;
         self.wait_text("selection-id", "未选择", Duration::from_secs(5))?;
         self.wait_absent("node-row-node-ahu", Duration::from_secs(5))?;
         self.click("undo-button")?;
@@ -444,39 +448,45 @@ impl Harness {
         self.wait_value("node-x", "651", Duration::from_secs(5))?;
         self.click("undo-button")?;
         self.wait_value("node-x", "650", Duration::from_secs(5))?;
-        self.gamepad_chord(10, 9)?;
+        self.open_gamepad_menu()?;
+        self.gamepad_menu_down(3)?;
+        self.gamepad_menu_confirm()?;
         self.wait_value("node-x", "651", Duration::from_secs(5))?;
         self.click("undo-button")?;
         self.wait_value("node-x", "650", Duration::from_secs(5))?;
 
-        self.gamepad_chord(10, 5)?;
+        self.open_gamepad_menu()?;
+        self.gamepad_menu_down(6)?;
+        self.gamepad_menu_confirm()?;
+        self.gamepad_menu_down(1)?;
+        self.gamepad_menu_confirm()?;
         self.wait_text("scene-mode", "3D", Duration::from_secs(5))?;
         self.wait_absent("screen-loading", Duration::from_secs(5))?;
         thread::sleep(Duration::from_millis(1_500));
         self.click("node-row-node-3d-ahu")?;
         self.wait_text("selection-id", "node.3d.ahu", Duration::from_secs(5))?;
-        let label_before = self.eval(
-            "(() => { const el = document.querySelector('[data-testid=\"device-label-node-3d-ahu\"]'); if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; })()",
+        let gizmo_before = self.eval(
+            "(() => { const el = document.querySelector('.axis-gizmo-label.is-x'); if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.x, y: r.y }; })()",
         )?;
         let position_before = self.input_value("node-position-x")?;
-        self.set_gamepad_button(10, true)?;
         self.set_gamepad_axis(2, 0.7)?;
         thread::sleep(Duration::from_millis(700));
         self.set_gamepad_axis(2, 0.0)?;
-        self.set_gamepad_button(10, false)?;
         thread::sleep(Duration::from_millis(400));
-        let label_after = self.eval(
-            "(() => { const el = document.querySelector('[data-testid=\"device-label-node-3d-ahu\"]'); if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; })()",
+        let gizmo_after = self.eval(
+            "(() => { const el = document.querySelector('.axis-gizmo-label.is-x'); if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.x, y: r.y }; })()",
         )?;
         ensure!(
-            !label_before.is_null() && !label_after.is_null(),
-            "3D 设备标签没有布局区域"
+            !gizmo_before.is_null() && !gizmo_after.is_null(),
+            "3D 坐标方位标识没有布局区域"
         );
+        let gizmo_dx =
+            gizmo_after["x"].as_f64().unwrap_or(0.0) - gizmo_before["x"].as_f64().unwrap_or(0.0);
+        let gizmo_dy =
+            gizmo_after["y"].as_f64().unwrap_or(0.0) - gizmo_before["y"].as_f64().unwrap_or(0.0);
         ensure!(
-            (label_after["x"].as_f64().unwrap_or(0.0) - label_before["x"].as_f64().unwrap_or(0.0))
-                .abs()
-                > 1.0,
-            "DualSense L3 + 右摇杆没有平移 3D 相机"
+            gizmo_dx.abs() + gizmo_dy.abs() > 1.0,
+            "DualSense 右摇杆没有旋转 3D 相机"
         );
         ensure!(
             self.input_value("node-position-x")? == position_before,
@@ -489,7 +499,10 @@ impl Harness {
         self.wait_text("selection-id", "未选择", Duration::from_secs(5))?;
         self.wait_absent("node-row-node-3d-ahu-copy1", Duration::from_secs(5))?;
 
-        self.gamepad_chord(10, 4)?;
+        self.open_gamepad_menu()?;
+        self.gamepad_menu_down(6)?;
+        self.gamepad_menu_confirm()?;
+        self.gamepad_menu_confirm()?;
         self.wait_text("scene-mode", "2D", Duration::from_secs(5))?;
         self.wait_absent("screen-loading", Duration::from_secs(5))?;
         self.click("node-row-node-ahu")?;
@@ -535,7 +548,7 @@ impl Harness {
 
     fn flow_keyboard_move_3d(&self) -> Result<(), String> {
         self.focus_selector("#bevy-canvas")?;
-        self.press("d")?;
+        self.press("ArrowRight")?;
         thread::sleep(Duration::from_millis(150));
         self.wait_value("node-position-x", "0.1", Duration::from_secs(5))?;
         self.click("undo-button")?;
@@ -1301,10 +1314,20 @@ impl Harness {
         Ok(())
     }
 
-    fn gamepad_chord(&self, hold: usize, button: usize) -> Result<(), String> {
-        self.set_gamepad_button(hold, true)?;
-        self.press_gamepad_button(button)?;
-        self.set_gamepad_button(hold, false)
+    fn open_gamepad_menu(&self) -> Result<(), String> {
+        self.press_gamepad_button(9)?;
+        self.wait_visible("gamepad-menu", Duration::from_secs(5))
+    }
+
+    fn gamepad_menu_down(&self, count: usize) -> Result<(), String> {
+        for _ in 0..count {
+            self.press_gamepad_button(13)?;
+        }
+        Ok(())
+    }
+
+    fn gamepad_menu_confirm(&self) -> Result<(), String> {
+        self.press_gamepad_button(0)
     }
 
     fn dispatch_wheel(&self, delta_y: f64, times: usize) -> Result<(), String> {

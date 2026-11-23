@@ -1,5 +1,6 @@
 #[cfg(not(target_arch = "wasm32"))]
 use bevy::input::gamepad::GamepadButton;
+use bevy::input::mouse::{MouseScrollUnit, MouseWheel};
 use bevy::prelude::*;
 use hmi_core::Screen;
 #[cfg(target_os = "macos")]
@@ -429,9 +430,6 @@ pub fn gamepad_guide_controls(pad: Res<GamepadState>, time: Res<Time>, mut repea
         return;
     }
     if pad.just_pressed(PadButton::Create) {
-        if pad.pressed(PadButton::L3) {
-            return;
-        }
         if crate::bridge::guide_open() {
             crate::bridge::set_guide_open(false);
         } else {
@@ -562,8 +560,34 @@ pub fn shift_pressed(keyboard: &ButtonInput<KeyCode>) -> bool {
     keyboard.pressed(KeyCode::ShiftLeft) || keyboard.pressed(KeyCode::ShiftRight)
 }
 
+pub fn alt_pressed(keyboard: &ButtonInput<KeyCode>) -> bool {
+    keyboard.pressed(KeyCode::AltLeft) || keyboard.pressed(KeyCode::AltRight)
+}
+
 pub fn zoom_modifier_pressed(keyboard: &ButtonInput<KeyCode>) -> bool {
     command_modifier_pressed(keyboard) || wheel_zoom_modifier_active()
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WheelIntent {
+    Zoom,
+    Pan,
+}
+
+pub fn wheel_intent(event: &MouseWheel, keyboard: &ButtonInput<KeyCode>) -> WheelIntent {
+    wheel_intent_from(
+        event.unit,
+        zoom_modifier_pressed(keyboard),
+        wheel_mouse_active(),
+    )
+}
+
+fn wheel_intent_from(unit: MouseScrollUnit, zoom_modifier: bool, mouse_wheel: bool) -> WheelIntent {
+    if zoom_modifier || unit == MouseScrollUnit::Line || mouse_wheel {
+        WheelIntent::Zoom
+    } else {
+        WheelIntent::Pan
+    }
 }
 
 pub fn command_modifier_pressed(keyboard: &ButtonInput<KeyCode>) -> bool {
@@ -584,6 +608,22 @@ fn wheel_zoom_modifier_active() -> bool {
         web_sys::window()
             .and_then(|window| {
                 js_sys::Reflect::get(&window, &JsValue::from_str("__moxHmiWheelZoomActive")).ok()
+            })
+            .and_then(|value| value.as_bool())
+            .unwrap_or(false)
+    }
+}
+
+fn wheel_mouse_active() -> bool {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        false
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        web_sys::window()
+            .and_then(|window| {
+                js_sys::Reflect::get(&window, &JsValue::from_str("__moxHmiWheelMouseActive")).ok()
             })
             .and_then(|value| value.as_bool())
             .unwrap_or(false)
@@ -663,42 +703,6 @@ pub fn gamepad_shortcuts(
     {
         return;
     }
-    if pad.pressed(PadButton::L3) && pad.just_pressed(PadButton::Options) {
-        crate::bridge::redo();
-        return;
-    }
-    if pad.pressed(PadButton::L3) && pad.just_pressed(PadButton::L1) {
-        cycle_screen(-1);
-        return;
-    }
-    if pad.pressed(PadButton::L3) && pad.just_pressed(PadButton::R1) {
-        cycle_screen(1);
-        return;
-    }
-    if pad.just_pressed(PadButton::Options) {
-        crate::bridge::undo();
-        return;
-    }
-    if pad.pressed(PadButton::L3) && pad.just_pressed(PadButton::Square) {
-        crate::bridge::select_all_nodes();
-        return;
-    }
-    if pad.pressed(PadButton::L3) && pad.just_pressed(PadButton::Cross) {
-        crate::bridge::copy_selection();
-        return;
-    }
-    if pad.pressed(PadButton::L3) && pad.just_pressed(PadButton::Circle) {
-        if let Err(error) = crate::bridge::cut_selection() {
-            crate::bridge::set_notice(crate::bridge::NoticeLevel::Error, error);
-        }
-        return;
-    }
-    if pad.pressed(PadButton::L3) && pad.just_pressed(PadButton::Triangle) {
-        if let Err(error) = crate::bridge::paste_clipboard() {
-            crate::bridge::set_notice(crate::bridge::NoticeLevel::Error, error);
-        }
-        return;
-    }
     if pad.just_pressed(PadButton::L1) {
         cycle_selection(-1);
         return;
@@ -718,14 +722,8 @@ pub fn gamepad_shortcuts(
         crate::bridge::reset_camera_3d();
         return;
     }
-    if pad.just_pressed(PadButton::Square) {
-        if let Err(error) = crate::bridge::duplicate_selection() {
-            crate::bridge::set_notice(crate::bridge::NoticeLevel::Error, error);
-        }
-        return;
-    }
-    if pad.just_pressed(PadButton::Triangle)
-        && let Err(error) = crate::bridge::delete_selection()
+    if pad.just_pressed(PadButton::Square)
+        && let Err(error) = crate::bridge::duplicate_selection()
     {
         crate::bridge::set_notice(crate::bridge::NoticeLevel::Error, error);
     }
@@ -778,6 +776,26 @@ mod tests {
         assert_eq!(
             native_pad_button(GamepadButton::Other((HID_BUTTON_PAGE << 16) | 13)),
             None
+        );
+    }
+
+    #[test]
+    fn wheel_uses_mouse_conventions_for_zoom_and_pan() {
+        assert_eq!(
+            wheel_intent_from(MouseScrollUnit::Line, false, false),
+            WheelIntent::Zoom
+        );
+        assert_eq!(
+            wheel_intent_from(MouseScrollUnit::Pixel, false, false),
+            WheelIntent::Pan
+        );
+        assert_eq!(
+            wheel_intent_from(MouseScrollUnit::Pixel, true, false),
+            WheelIntent::Zoom
+        );
+        assert_eq!(
+            wheel_intent_from(MouseScrollUnit::Pixel, false, true),
+            WheelIntent::Zoom
         );
     }
 

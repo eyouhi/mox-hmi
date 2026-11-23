@@ -791,9 +791,7 @@ fn apply_wheel_2d(
         if !pointer_on_canvas {
             continue;
         }
-        let zoom_requested =
-            event.unit == MouseScrollUnit::Line || input::zoom_modifier_pressed(keyboard);
-        if zoom_requested {
+        if input::wheel_intent(event, keyboard) == input::WheelIntent::Zoom {
             if event.y.abs() < f32::EPSILON {
                 continue;
             }

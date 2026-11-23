@@ -86,7 +86,7 @@ pub fn OperationGuide() -> Element {
                     div {
                         div { class: "eyebrow", "输入与操作" }
                         h2 { id: "guide-title", class: "guide-title", "MOX HMI 操作指引" }
-                        p { class: "guide-lead", "2D 与 3D 共用一套选择、框选和剪贴板规则：点击选择，⇧/⌘ 点击多选，空白处拖动框选。点击画布后键盘快捷键生效；DualSense 触摸板可进入单个节点的参数模式。" }
+                        p { class: "guide-lead", "键鼠遵循设计软件习惯，手柄遵循主机布局：左摇杆移动、右摇杆观察、Options 打开菜单。2D 与 3D 共用选择、框选和剪贴板规则；点击画布后键盘快捷键生效。" }
                     }
                     div { class: "guide-head-actions",
                         span {
@@ -150,7 +150,7 @@ pub fn OperationGuide() -> Element {
 
                 footer { class: "guide-foot",
                     span { "F1 打开 / 关闭指引" }
-                    span { "手柄：L1 / R1 或 ← / → 切换章节；可切到“手柄操作”" }
+                    span { "手柄：L1 / R1 或 ← / → 切换章节；Create 打开 / 关闭" }
                     span { "↑ / ↓ 或左摇杆滚动 · Circle 关闭" }
                     button {
                         class: "mini-button",
@@ -171,7 +171,7 @@ fn GuideStart() -> Element {
             ol { class: "guide-steps",
                 li {
                     strong { "选择画面类型。" }
-                    span { "左侧“画面”标题栏点击 +，选择“空白 2D 画面”或“3D 机房画面”；手柄可按住 L3 再按 Create，在快捷菜单中新建并切换。" }
+                    span { "左侧“画面”标题栏点击 +，选择“空白 2D 画面”或“3D 机房画面”；手柄按 Options 打开菜单，在“画面”中新建并切换。" }
                 }
                 li {
                     strong { "添加内容。" }
@@ -191,8 +191,8 @@ fn GuideStart() -> Element {
                 p { "新建 3D 画面后，Bevy 只生成一个地面和灯光，不再额外生成墙体；设备节点来自左侧 3D 设备库。选中设备后会出现青色选择环，右侧可编辑 X/Y/Z（Z 垂直地面）、旋转、缩放和 GLB 路径。" }
             }
             div { class: "guide-callout",
-                strong { "手柄快捷菜单：L3 + Create" }
-                p { "打开后可进入组件库、浏览数据字典、查看手柄操作说明、新建 2D/3D 画面和切换画面。× 执行，○ 返回/关闭；添加的节点会自动选中并出现在视野中心，随后用左摇杆拖动、方向键微调。" }
+                strong { "手柄菜单：Options" }
+                p { "按 Options 打开菜单，可编辑所选、撤销/重做、添加组件、浏览数据字典、新建或切换画面，以及查看手柄说明。× 执行，○ 返回，Options 关闭；添加的节点会自动选中并出现在视野中心，随后用左摇杆拖动、方向键微调。" }
             }
             div { class: "guide-callout is-soft",
                 strong { "对齐与震动反馈" }
@@ -204,7 +204,7 @@ fn GuideStart() -> Element {
             }
             div { class: "guide-callout is-soft",
                 strong { "三类输入的能力边界" }
-                p { "画布内的选择、框选、组移动、复制/剪切/粘贴、删除、撤销/重做、画面切换，以及通过 L3+Create 菜单新建画面/添加节点，均可由 DualSense 完成。手柄用 L3+□ 全选，用 L3+×/○/△ 复制/剪切/粘贴；文本、颜色和 Tag 绑定仍需键鼠或触控板。" }
+                p { "画布内的选择、组移动、复制/剪切/粘贴、全选、删除、撤销/重做、画面切换和添加节点，均可由 DualSense 完成。剪贴板与删除操作集中在 Options → 编辑所选，避免误触；文本、颜色和 Tag 绑定仍需键鼠或触控板。" }
             }
         }
     }
@@ -259,17 +259,12 @@ fn GuideTwoD() -> Element {
                     tr { td { "右摇杆" } td { "平移画布" } }
                     tr { td { "L2 / R2" } td { "缩小 / 放大画布" } }
                     tr { td { "方向键" } td { "整组轻推 2 个单位；靠近中心线时不会被吸附卡住" } }
+                    tr { td { "L1 / R1" } td { "单选上一个 / 下一个节点" } }
                     tr { td { "Cross ×" } td { "聚焦所选节点" } }
                     tr { td { "Circle ○" } td { "取消选择" } }
                     tr { td { "Square □" } td { "原地复制所选节点" } }
-                    tr { td { "Triangle △" } td { "删除所选节点" } }
-                    tr { td { "L1 / R1" } td { "单选上一个 / 下一个节点" } }
-                    tr { td { "按住 L3 + Square □" } td { "全选当前画面的可见节点" } }
-                    tr { td { "按住 L3 + Cross × / Circle ○ / Triangle △" } td { "复制 / 剪切 / 粘贴所选节点" } }
-                    tr { td { "Options" } td { "撤销" } }
-                    tr { td { "按住 L3 + Options" } td { "重做" } }
-                    tr { td { "按住 L3 + Create" } td { "打开手柄快捷菜单：添加组件、新建 2D/3D 画面、切换画面" } }
-                    tr { td { "按住 L3 + L1 / R1" } td { "切换上一个 / 下一个画面" } }
+                    tr { td { "Options" } td { "打开手柄菜单：编辑、撤销/重做、添加、数据字典、画面" } }
+                    tr { td { "Options → 编辑所选" } td { "复制、剪切、粘贴、全选和删除" } }
                     tr { td { "Create" } td { "打开 / 关闭本指引" } }
                     tr { td { "指引已打开：L1 / R1 或 ← / →" } td { "切换上一章 / 下一章" } }
                     tr { td { "指引已打开：↑ / ↓ 或左摇杆" } td { "滚动指引正文" } }
@@ -280,7 +275,7 @@ fn GuideTwoD() -> Element {
                     tr { td { "参数模式：Circle ○" } td { "退出参数模式，不取消选择" } }
                 }
             }
-            p { class: "guide-note", "框选和任意组合多选使用鼠标或触控板；手柄可用 L3+□ 全选，再用 L1/R1 单选浏览。参数模式一次只能调整一个节点；文本、颜色和 Tag 选择仍使用键鼠或触控板。连接方式：在 macOS 蓝牙设置中配对 DualSense，按一下 PS 键唤醒，再按任意键；识别后顶栏显示“DualSense”。" }
+            p { class: "guide-note", "框选和任意组合多选使用鼠标或触控板；手柄可在 Options → 编辑所选中全选，再用 L1/R1 单选浏览。连接方式：在 macOS 蓝牙设置中配对 DualSense，按一下 PS 键唤醒，再按任意键；识别后顶栏显示“DualSense”。" }
         }
     }
 }
@@ -298,11 +293,11 @@ fn GuideThreeD() -> Element {
                     tr { td { "⇧ 或 ⌘ + 单击设备" } td { "加入或移出选择（多选）" } }
                     tr { td { "拖拽设备" } td { "沿地面 X/Y 平面移动所选组；拖未选设备会先选中它，松开后一次提交" } }
                     tr { td { "空白处左键拖拽" } td { "屏幕空间区域框选，与设备包围盒相交即选中" } }
-                    tr { td { "Option/Alt + 左键拖拽" } td { "轨道旋转视角" } }
+                    tr { td { "右键拖拽 / Option/Alt + 左键拖拽" } td { "轨道旋转视角" } }
                     tr { td { "中键拖拽" } td { "平移观察中心" } }
                     tr { td { "鼠标滚轮" } td { "拉近 / 拉远" } }
                     tr { td { "触控板拖拽设备 / 空白" } td { "拖设备移动所选组；拖空白区域框选" } }
-                    tr { td { "触控板 Option/Alt + 左键拖拽" } td { "旋转视角" } }
+                    tr { td { "触控板 Option/Alt + 左键拖拽" } td { "轨道旋转视角" } }
                     tr { td { "触控板双指滚动" } td { "平移观察中心" } }
                     tr { td { "触控板捏合 / Cmd(⌘)+滚动" } td { "拉近 / 拉远" } }
                 }
@@ -312,13 +307,14 @@ fn GuideThreeD() -> Element {
             table { class: "guide-table",
                 thead { tr { th { scope: "col", "按键" } th { scope: "col", "结果" } } }
                 tbody {
-                    tr { td { kbd { "←" } kbd { "→" } kbd { "↑" } kbd { "↓" } } td { "环绕旋转视角" } }
+                    tr { td { kbd { "←" } kbd { "→" } kbd { "↑" } kbd { "↓" } } td { "整组轻推地面 X / Y，每步 0.1" } }
+                    tr { td { kbd { "Q" } kbd { "E" } } td { "降低 / 升高整组设备，每步 0.1" } }
+                    tr { td { kbd { "Shift" } " + 移动键" } td { "每步 1.0" } }
+                    tr { td { kbd { "Option/Alt" } " + 方向键" } td { "环绕旋转视角" } }
+                    tr { td { kbd { "W" } kbd { "A" } kbd { "S" } kbd { "D" } } td { "相对当前视角平移观察中心" } }
                     tr { td { kbd { "+" } kbd { "-" } } td { "拉近 / 拉远" } }
                     tr { td { kbd { "Home" } } td { "重置 3D 视角" } }
                     tr { td { kbd { "F" } } td { "聚焦所选设备" } }
-                    tr { td { kbd { "W" } kbd { "A" } kbd { "S" } kbd { "D" } } td { "沿世界 X / Y 轴整组移动设备，每步 0.1" } }
-                    tr { td { kbd { "Q" } kbd { "E" } } td { "降低 / 升高整组设备 Z，每步 0.1" } }
-                    tr { td { kbd { "Shift" } " + 移动键" } td { "每步 1.0" } }
                     tr { td { kbd { "⌘A" } } td { "全选当前画面的可见设备" } }
                     tr { td { kbd { "⌘C" } kbd { "⌘V" } kbd { "⌘X" } } td { "复制 / 粘贴 / 剪切；跨同类型画面粘贴会保留相对位置" } }
                     tr { td { kbd { "⌘D" } } td { "原地复制所选设备，不改写剪贴板" } }
@@ -333,24 +329,17 @@ fn GuideThreeD() -> Element {
                 thead { tr { th { scope: "col", "按键" } th { scope: "col", "结果" } } }
                 tbody {
                     tr { td { "左摇杆" } td { "相对当前镜头方向沿地面移动整个所选组，左右不会因转视角而反转；松开后一次提交" } }
-                    tr { td { "按住 L3 + 左摇杆" } td { "切换为垂直模式：左右仍相对镜头，上下调整 Z（高度）" } }
                     tr { td { "右摇杆" } td { "环绕旋转视角" } }
-                    tr { td { "按住 L3 + 右摇杆" } td { "平移观察中心" } }
                     tr { td { "L2 / R2" } td { "拉远 / 拉近" } }
-                    tr { td { "方向键" } td { "整组精确轻推 X / Y，每次 0.1" } }
-                    tr { td { "按住 L3 + 方向键上下" } td { "精确调整 Z（高度）" } }
+                    tr { td { "方向键 ← / →" } td { "整组精确轻推 X，每次 0.1" } }
+                    tr { td { "方向键 ↑ / ↓" } td { "整组精确调整 Z（高度），每次 0.1" } }
                     tr { td { "Cross ×" } td { "聚焦所选设备" } }
                     tr { td { "Circle ○" } td { "取消选择" } }
                     tr { td { "R3" } td { "重置 3D 视角" } }
                     tr { td { "Square □" } td { "原地复制所选设备" } }
-                    tr { td { "Triangle △" } td { "删除所选设备" } }
                     tr { td { "L1 / R1" } td { "单选上一个 / 下一个设备" } }
-                    tr { td { "按住 L3 + Square □" } td { "全选当前画面的可见设备" } }
-                    tr { td { "按住 L3 + Cross × / Circle ○ / Triangle △" } td { "复制 / 剪切 / 粘贴所选设备" } }
-                    tr { td { "Options" } td { "撤销" } }
-                    tr { td { "按住 L3 + Options" } td { "重做" } }
-                    tr { td { "按住 L3 + Create" } td { "打开手柄快捷菜单：组件库、数据字典、手柄说明、新建/切换画面" } }
-                    tr { td { "按住 L3 + L1 / R1" } td { "切换上一个 / 下一个画面" } }
+                    tr { td { "Options" } td { "打开手柄菜单：编辑、撤销/重做、添加、数据字典、画面" } }
+                    tr { td { "Options → 编辑所选" } td { "复制、剪切、粘贴、全选和删除" } }
                     tr { td { "Create" } td { "打开 / 关闭本指引" } }
                     tr { td { "指引已打开：L1 / R1 或 ← / →" } td { "切换上一章 / 下一章" } }
                     tr { td { "指引已打开：↑ / ↓ 或左摇杆" } td { "滚动指引正文" } }
@@ -361,7 +350,7 @@ fn GuideThreeD() -> Element {
                     tr { td { "参数模式：Circle ○" } td { "退出参数模式，不取消选择" } }
                 }
             }
-            p { class: "guide-note", "当前 3D 编辑采用“选择 + 变换 + 属性”的工作流，不提供工业建模软件式多轴 Gizmo，但画布左下角有实时 XYZ 方位标识：X 左右、Y 前后、Z 垂直地面。拖拽设备直接移动整组，拖空白处框选，Option/Alt + 拖拽旋转视角；旋转与缩放可在右侧检查器或手柄参数模式中精确调整。框选和任意组合多选使用鼠标/触控板，手柄可用 L3+□ 全选。" }
+            p { class: "guide-note", "当前 3D 编辑采用“选择 + 变换 + 属性”的工作流，不提供工业建模软件式多轴 Gizmo，但画布左下角有实时 XYZ 方位标识：X 左右、Y 前后、Z 垂直地面。方向键沿地面轻推，Q/E 调整高度；旋转与缩放可在右侧检查器或手柄触摸板参数模式中精确调整。框选使用鼠标/触控板，手柄可在 Options → 编辑所选中全选。" }
         }
     }
 }
@@ -376,41 +365,60 @@ fn GuideGamepad() -> Element {
                 tbody {
                     tr { td { "左摇杆" } td { "移动所选画面内容。3D 中始终相对当前镜头方向，左右不会因视角旋转而颠倒" } }
                     tr { td { "右摇杆" } td { "2D 平移画布；3D 环绕旋转视角" } }
-                    tr { td { "按住 L3 + 左摇杆" } td { "3D 垂直模式：左右沿地面，上下调整 Z 高度" } }
-                    tr { td { "按住 L3 + 右摇杆" } td { "3D 平移观察中心" } }
                     tr { td { "L2 / R2" } td { "拉远 / 拉近" } }
+                    tr { td { "方向键" } td { "2D 沿 X / Y 轻推 2 个单位；3D 沿 X 和高度 Z 精确轻推 0.1" } }
+                    tr { td { "L1 / R1" } td { "单选上一个 / 下一个节点或设备" } }
                     tr { td { "Cross ×" } td { "聚焦所选设备" } }
                     tr { td { "Circle ○" } td { "取消选择" } }
+                    tr { td { "Square □" } td { "原地复制所选内容" } }
+                    tr { td { "R3" } td { "3D 重置视角" } }
+                    tr { td { "Options" } td { "打开 / 关闭手柄菜单" } }
+                    tr { td { "Create" } td { "打开 / 关闭本指引" } }
                     tr { td { "DualSense 触摸板" } td { "单选且未锁定时，打开数值参数模式；方向键切换/调整参数" } }
                 }
             }
+
+            h3 { "手柄菜单：编辑与画面" }
+            table { class: "guide-table",
+                thead { tr { th { scope: "col", "按键" } th { scope: "col", "结果" } } }
+                tbody {
+                    tr { td { "Options" } td { "打开菜单；菜单内再按一次关闭" } }
+                    tr { td { "方向键 ↑ / ↓" } td { "选择菜单项" } }
+                    tr { td { "Cross ×" } td { "执行当前菜单项" } }
+                    tr { td { "Circle ○" } td { "返回上一级；根菜单中关闭" } }
+                    tr { td { "编辑所选" } td { "复制、剪切、粘贴、原地复制、全选和删除" } }
+                    tr { td { "撤销 / 重做" } td { "位于根菜单，直接执行" } }
+                    tr { td { "添加组件" } td { "进入当前画面的 2D 图元或 3D 设备列表" } }
+                    tr { td { "数据字典" } td { "浏览 Tag 与实时值" } }
+                    tr { td { "画面" } td { "切换上一个 / 下一个画面，或新建 2D / 3D 画面" } }
+                }
+            }
+            p { class: "guide-note", "剪贴板、全选和删除集中放在“编辑所选”，不再使用 L3 组合键，避免边移动边误触。左侧“组件库”标题下的提示与菜单内容一致；鼠标/触控板仍可直接点击组件按钮。" }
 
             h3 { "组件库：手柄添加" }
             table { class: "guide-table",
                 thead { tr { th { scope: "col", "按键" } th { scope: "col", "结果" } } }
                 tbody {
-                    tr { td { "按住 L3 + Create" } td { "打开手柄快捷菜单" } }
-                    tr { td { "选择“组件库 / 添加 2D 图元 / 添加 3D 设备”" } td { "进入当前画面的组件列表" } }
+                    tr { td { "Options → 添加组件" } td { "进入当前画面的组件列表" } }
                     tr { td { "方向键 ↑↓" } td { "选择组件；× 添加到当前视野中心并自动选中" } }
-                    tr { td { "Circle ○" } td { "返回上一级；在根菜单再按一次关闭" } }
+                    tr { td { "Circle ○" } td { "返回上一级菜单" } }
                 }
             }
-            p { class: "guide-note", "左侧“组件库”标题下的提示和菜单内容一致；鼠标/触控板仍可直接点击组件按钮。" }
 
             h3 { "数据字典：浏览与选中 Tag" }
             table { class: "guide-table",
                 thead { tr { th { scope: "col", "按键" } th { scope: "col", "结果" } } }
                 tbody {
-                    tr { td { "按住 L3 + Create → 数据字典" } td { "打开 Tag 列表，每项显示名称、ID 和实时值" } }
+                    tr { td { "Options → 数据字典" } td { "打开 Tag 列表，每项显示名称、ID 和实时值" } }
                     tr { td { "方向键 ↑↓" } td { "浏览 Tag" } }
                     tr { td { "Cross ×" } td { "在左侧数据字典中选中该 Tag，并展开详情" } }
-                    tr { td { "Circle ○" } td { "返回手柄菜单；再按一次关闭" } }
+                    tr { td { "Circle ○" } td { "返回手柄菜单" } }
                 }
             }
             p { class: "guide-note", "手柄负责浏览和选中。Tag 名称、单位、范围、初始值和绑定等文本/下拉编辑仍用鼠标或触控板完成，避免手柄误改工程。" }
 
             h3 { "随时查看说明" }
-            p { class: "guide-note", "按手柄 Create 可打开本指引，再按 L1 / R1 切到“手柄操作”。L3+Create 菜单内也提供“手柄操作说明”入口。" }
+            p { class: "guide-note", "按手柄 Create 可打开本指引，再按 L1 / R1 切到“手柄操作”。Options → 手柄操作说明也提供同一入口。" }
         }
     }
 }

@@ -88,12 +88,12 @@ pub fn App() -> Element {
     let previous_screen = use_hook(|| Rc::new(RefCell::new(bridge::active_screen())));
     let edit_hint = if is_three_d {
         if gamepad_connected {
-            "左摇杆相对镜头移动 · 右摇杆视角 · 空白拖框选 · L3+Create 组件库/数据字典"
+            "左摇杆地面移动 · 右摇杆视角 · 方向键 X/高度 · Options 菜单"
         } else {
-            "拖设备移动 · 空白拖框选 · Option+左拖旋转 · WASD 沿地移动 · Q/E 升降"
+            "拖设备移动 · 空白拖框选 · Option+左拖旋转 · 方向键微调 · Q/E 升降"
         }
     } else if gamepad_connected {
-        "左摇杆移动 · 右摇杆平移 · 空白拖框选 · L3+Create 组件库/数据字典"
+        "左摇杆移动 · 右摇杆平移 · 空白拖框选 · Options 菜单"
     } else {
         "拖动/框选 · ⇧ 或 ⌘ 点击多选 · ⌘C/V/X · 空格/中键平移 · F 聚焦"
     };
@@ -237,9 +237,9 @@ pub fn App() -> Element {
                     {canvas_element(screen_loading() || engine_starting)}
                     p { id: "canvas-help", class: "sr-only",
                         if cfg!(target_arch = "wasm32") {
-                            "画布内容由 WebGPU 渲染。点击或 Shift 点击多选，空白处拖动框选；⌘A 全选，⌘C/⌘V/⌘X 复制、粘贴、剪切，⌘D 原地复制，Delete 删除，⌘Z 撤销。2D 方向键轻推，Q/E 旋转，F 聚焦；3D Option 加左键拖动旋转视角，Shift 加左键拖动移动选中设备，方向键旋转视角，WASD 沿地面移动，Q/E 调整 Z 高度。DualSense 左摇杆相对镜头移动，右摇杆旋转视角，L3+Create 打开组件库和数据字典。"
+                            "画布内容由 WebGPU 渲染。点击或 Shift 点击多选，空白处拖动框选；⌘A 全选，⌘C/⌘V/⌘X 复制、粘贴、剪切，⌘D 原地复制，Delete 删除，⌘Z 撤销。2D 方向键轻推，Q/E 旋转，F 聚焦；3D 方向键轻推，Q/E 调整高度，Option 加方向键旋转视角，WASD 平移观察中心，Shift 加速。DualSense 左摇杆移动，右摇杆观察，Options 打开菜单，Create 打开指引。"
                         } else {
-                            "画布内容由 Bevy wgpu 渲染。点击或 Shift 点击多选，空白处拖动框选；⌘A 全选，⌘C/⌘V/⌘X 复制、粘贴、剪切，⌘D 原地复制，Delete 删除，⌘Z 撤销。2D 方向键轻推，Q/E 旋转，F 聚焦；3D Option 加左键拖动旋转视角，Shift 加左键拖动移动选中设备，方向键旋转视角，WASD 沿地面移动，Q/E 调整 Z 高度。DualSense 左摇杆相对镜头移动，右摇杆旋转视角，L3+Create 打开组件库和数据字典。"
+                            "画布内容由 Bevy wgpu 渲染。点击或 Shift 点击多选，空白处拖动框选；⌘A 全选，⌘C/⌘V/⌘X 复制、粘贴、剪切，⌘D 原地复制，Delete 删除，⌘Z 撤销。2D 方向键轻推，Q/E 旋转，F 聚焦；3D 方向键轻推，Q/E 调整高度，Option 加方向键旋转视角，WASD 平移观察中心，Shift 加速。DualSense 左摇杆移动，右摇杆观察，Options 打开菜单，Create 打开指引。"
                         }
                     }
                     if screen_loading() || engine_starting {
@@ -375,6 +375,7 @@ fn install_wheel_zoom_bridge() {
           if (window.__moxHmiWheelZoomBridge) return;
           window.__moxHmiWheelZoomBridge = true;
           let timer = 0;
+          let mouseTimer = 0;
           const markWheelZoomActive = () => {
             window.__moxHmiWheelZoomActive = true;
             window.clearTimeout(timer);
@@ -382,9 +383,27 @@ fn install_wheel_zoom_bridge() {
               window.__moxHmiWheelZoomActive = false;
             }, 900);
           };
+          const markMouseWheelActive = () => {
+            window.__moxHmiWheelMouseActive = true;
+            window.clearTimeout(mouseTimer);
+            mouseTimer = window.setTimeout(() => {
+              window.__moxHmiWheelMouseActive = false;
+            }, 350);
+          };
           window.addEventListener("wheel", (event) => {
-            if (!event.ctrlKey && !event.metaKey) return;
-            markWheelZoomActive();
+            if (event.ctrlKey || event.metaKey) {
+              markWheelZoomActive();
+              return;
+            }
+            if (event.deltaMode === WheelEvent.DOM_DELTA_LINE) {
+              markMouseWheelActive();
+              return;
+            }
+            const legacy = Number(event.wheelDeltaY);
+            const looksLikeMouseWheel = Number.isFinite(legacy)
+              ? Math.abs(legacy) >= 120 && Math.abs(legacy) % 120 === 0
+              : Math.abs(event.deltaY) >= 100 && event.deltaX === 0 && Number.isInteger(event.deltaY);
+            if (looksLikeMouseWheel) markMouseWheelActive();
           }, { capture: true, passive: true });
 
           const attachGestureBridge = () => {
@@ -395,6 +414,7 @@ fn install_wheel_zoom_bridge() {
             }
             if (canvas.__moxHmiGestureBridge) return;
             canvas.__moxHmiGestureBridge = true;
+            canvas.addEventListener("contextmenu", (event) => event.preventDefault(), { passive: false });
             let gestureScale = 1;
             canvas.addEventListener("gesturestart", (event) => {
               gestureScale = Number(event.scale) || 1;

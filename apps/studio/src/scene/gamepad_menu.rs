@@ -6,16 +6,29 @@ use hmi_core::Screen;
 enum MenuLevel {
     #[default]
     Root,
+    Edit,
     Add,
     Tags,
+    Screens,
 }
 
 #[derive(Debug, Clone)]
 enum MenuAction {
+    Close,
+    OpenEdit,
+    Undo,
+    Redo,
+    Copy,
+    Cut,
+    Paste,
+    Duplicate,
+    Delete,
+    SelectAll,
     OpenAdd,
     Add(&'static str),
     OpenTags,
     SelectTag { id: String, name: String },
+    OpenScreens,
     OpenGamepadGuide,
     NewScreen(bool),
     CycleScreen(isize),
@@ -48,7 +61,7 @@ pub fn gamepad_menu(pad: Res<GamepadState>, mut state: ResMut<GamepadMenuState>)
         return;
     }
 
-    if pad.pressed(PadButton::L3) && pad.just_pressed(PadButton::Create) {
+    if pad.just_pressed(PadButton::Options) {
         if state.open {
             close(&mut state);
         } else {
@@ -62,15 +75,14 @@ pub fn gamepad_menu(pad: Res<GamepadState>, mut state: ResMut<GamepadMenuState>)
     }
 
     if pad.just_pressed(PadButton::Circle) {
-        if matches!(state.level, MenuLevel::Add | MenuLevel::Tags) {
+        if matches!(
+            state.level,
+            MenuLevel::Edit | MenuLevel::Add | MenuLevel::Tags | MenuLevel::Screens
+        ) {
             open_root(&mut state);
         } else {
             close(&mut state);
         }
-        return;
-    }
-    if pad.just_pressed(PadButton::Create) {
-        close(&mut state);
         return;
     }
 
@@ -95,6 +107,46 @@ pub fn gamepad_menu(pad: Res<GamepadState>, mut state: ResMut<GamepadMenuState>)
 
 fn execute(action: MenuAction, state: &mut GamepadMenuState) {
     match action {
+        MenuAction::Close => close(state),
+        MenuAction::OpenEdit => open_edit(state),
+        MenuAction::Undo => {
+            crate::bridge::undo();
+            close(state);
+        }
+        MenuAction::Redo => {
+            crate::bridge::redo();
+            close(state);
+        }
+        MenuAction::Copy => {
+            if crate::bridge::copy_selection() {
+                finish_with_notice(state, "已复制所选节点".to_string());
+            } else {
+                finish_with_error(state, "没有可复制的节点".to_string());
+            }
+        }
+        MenuAction::Cut => match crate::bridge::cut_selection() {
+            Ok(count) => finish_with_notice(state, format!("已剪切 {count} 个节点")),
+            Err(error) => finish_with_error(state, error),
+        },
+        MenuAction::Paste => match crate::bridge::paste_clipboard() {
+            Ok(count) => finish_with_notice(state, format!("已粘贴 {count} 个节点")),
+            Err(error) => finish_with_error(state, error),
+        },
+        MenuAction::Duplicate => match crate::bridge::duplicate_selection() {
+            Ok(count) => finish_with_notice(state, format!("已原地复制 {count} 个节点")),
+            Err(error) => finish_with_error(state, error),
+        },
+        MenuAction::Delete => match crate::bridge::delete_selection() {
+            Ok(count) => finish_with_notice(state, format!("已删除 {count} 个节点")),
+            Err(error) => finish_with_error(state, error),
+        },
+        MenuAction::SelectAll => {
+            crate::bridge::select_all_nodes();
+            finish_with_notice(
+                state,
+                format!("已选择 {} 个节点", crate::bridge::selected_nodes().len()),
+            );
+        }
         MenuAction::OpenAdd => {
             open_add(state);
         }
@@ -123,6 +175,9 @@ fn execute(action: MenuAction, state: &mut GamepadMenuState) {
                 format!("数据字典已选中：{name}；可用触控板查看和编辑详情"),
             );
             close(state);
+        }
+        MenuAction::OpenScreens => {
+            open_screens(state);
         }
         MenuAction::OpenGamepadGuide => {
             crate::bridge::set_guide_section(crate::bridge::GuideSection::Gamepad);
@@ -155,7 +210,28 @@ fn open_root(state: &mut GamepadMenuState) {
     state.open = true;
     state.level = MenuLevel::Root;
     state.index = 0;
+    let selection_count = crate::bridge::selected_nodes().len();
     state.items = vec![
+        MenuEntry {
+            label: "继续编辑".to_string(),
+            detail: "返回画布".to_string(),
+            action: MenuAction::Close,
+        },
+        MenuEntry {
+            label: "编辑所选".to_string(),
+            detail: format!("{selection_count} 个节点 · 复制、粘贴、删除"),
+            action: MenuAction::OpenEdit,
+        },
+        MenuEntry {
+            label: "撤销".to_string(),
+            detail: "上一步编辑".to_string(),
+            action: MenuAction::Undo,
+        },
+        MenuEntry {
+            label: "重做".to_string(),
+            detail: "恢复刚撤销的编辑".to_string(),
+            action: MenuAction::Redo,
+        },
         MenuEntry {
             label: add_menu_title(),
             detail: "进入组件库".to_string(),
@@ -167,20 +243,68 @@ fn open_root(state: &mut GamepadMenuState) {
             action: MenuAction::OpenTags,
         },
         MenuEntry {
+            label: "画面".to_string(),
+            detail: "新建或切换画面".to_string(),
+            action: MenuAction::OpenScreens,
+        },
+        MenuEntry {
             label: "手柄操作说明".to_string(),
-            detail: "画面 / 组件库 / 数据字典".to_string(),
+            detail: "查看完整键位".to_string(),
             action: MenuAction::OpenGamepadGuide,
         },
+    ];
+    publish(state);
+}
+
+fn open_edit(state: &mut GamepadMenuState) {
+    state.open = true;
+    state.level = MenuLevel::Edit;
+    state.index = 0;
+    state.items = vec![
         MenuEntry {
-            label: "新建 3D 机房画面".to_string(),
-            detail: "创建并切换过去".to_string(),
-            action: MenuAction::NewScreen(true),
+            label: "复制".to_string(),
+            detail: "复制到 HMI 剪贴板".to_string(),
+            action: MenuAction::Copy,
         },
         MenuEntry {
-            label: "新建 2D 空白画面".to_string(),
-            detail: "创建并切换过去".to_string(),
-            action: MenuAction::NewScreen(false),
+            label: "剪切".to_string(),
+            detail: "移动所选节点到剪贴板".to_string(),
+            action: MenuAction::Cut,
         },
+        MenuEntry {
+            label: "粘贴".to_string(),
+            detail: "粘贴并选中新节点".to_string(),
+            action: MenuAction::Paste,
+        },
+        MenuEntry {
+            label: "原地复制".to_string(),
+            detail: "不改写剪贴板".to_string(),
+            action: MenuAction::Duplicate,
+        },
+        MenuEntry {
+            label: "全选".to_string(),
+            detail: "选择当前画面的可见节点".to_string(),
+            action: MenuAction::SelectAll,
+        },
+        MenuEntry {
+            label: "删除".to_string(),
+            detail: "可立即撤销".to_string(),
+            action: MenuAction::Delete,
+        },
+        MenuEntry {
+            label: "返回".to_string(),
+            detail: "回到手柄菜单".to_string(),
+            action: MenuAction::Back,
+        },
+    ];
+    publish(state);
+}
+
+fn open_screens(state: &mut GamepadMenuState) {
+    state.open = true;
+    state.level = MenuLevel::Screens;
+    state.index = 0;
+    state.items = vec![
         MenuEntry {
             label: "上一个画面".to_string(),
             detail: "循环切换".to_string(),
@@ -190,6 +314,21 @@ fn open_root(state: &mut GamepadMenuState) {
             label: "下一个画面".to_string(),
             detail: "循环切换".to_string(),
             action: MenuAction::CycleScreen(1),
+        },
+        MenuEntry {
+            label: "新建 2D 空白画面".to_string(),
+            detail: "创建并切换过去".to_string(),
+            action: MenuAction::NewScreen(false),
+        },
+        MenuEntry {
+            label: "新建 3D 机房画面".to_string(),
+            detail: "创建并切换过去".to_string(),
+            action: MenuAction::NewScreen(true),
+        },
+        MenuEntry {
+            label: "返回".to_string(),
+            detail: "回到手柄菜单".to_string(),
+            action: MenuAction::Back,
         },
     ];
     publish(state);
@@ -255,18 +394,22 @@ fn open_add(state: &mut GamepadMenuState) {
 
 fn publish(state: &GamepadMenuState) {
     let title = match state.level {
-        MenuLevel::Root => "手柄快捷菜单",
+        MenuLevel::Root => "手柄菜单",
+        MenuLevel::Edit => "编辑所选",
         MenuLevel::Add => match crate::bridge::active_screen_snapshot() {
             Some(Screen::TwoD { .. }) => "添加 2D 图元",
             Some(Screen::ThreeD { .. }) => "添加 3D 设备",
             None => "添加组件",
         },
         MenuLevel::Tags => "数据字典",
+        MenuLevel::Screens => "画面",
     };
     let hint = match state.level {
-        MenuLevel::Root => "↑↓ 选择 · × 执行 · ○ 关闭（也可再按 L3+Create）",
+        MenuLevel::Root => "↑↓ 选择 · × 执行 · ○ 返回 · Options 关闭",
+        MenuLevel::Edit => "↑↓ 选择 · × 执行 · ○ 返回",
         MenuLevel::Add => "↑↓ 选择 · × 添加到画面 · ○ 返回",
         MenuLevel::Tags => "↑↓ 浏览 · × 在数据字典中选中 · ○ 返回",
+        MenuLevel::Screens => "↑↓ 选择 · × 执行 · ○ 返回",
     };
     crate::bridge::set_gamepad_menu_hud(Some(crate::bridge::GamepadMenuHud {
         title: title.to_string(),
@@ -281,6 +424,16 @@ fn publish(state: &GamepadMenuState) {
         index: state.index,
         hint: hint.to_string(),
     }));
+}
+
+fn finish_with_notice(state: &mut GamepadMenuState, message: String) {
+    crate::bridge::set_notice(crate::bridge::NoticeLevel::Info, message);
+    close(state);
+}
+
+fn finish_with_error(state: &mut GamepadMenuState, error: String) {
+    crate::bridge::set_notice(crate::bridge::NoticeLevel::Error, error);
+    close(state);
 }
 
 fn add_menu_title() -> String {

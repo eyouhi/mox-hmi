@@ -55,7 +55,9 @@ Shortcuts do not run while a text field, textarea, select, or contenteditable el
 - Device bounds are projected to screen space for marquee hits.
 - Imported GLB child meshes inherit the device picking tag.
 - Selection rings are shown for every selected device.
-- WASD/QE and D-pad nudges apply to the entire unlocked selection as one undo entry.
+- Arrow keys nudge the entire unlocked selection on the ground plane; `Q/E` adjust height; `Shift` applies the large step.
+- `WASD` pans the orbit focus, `Option/Alt` plus arrow keys orbits, `RMB` drag orbits, and the wheel zooms.
+- D-pad nudges apply to the entire unlocked selection as one undo entry.
 
 ## Surface updates
 
