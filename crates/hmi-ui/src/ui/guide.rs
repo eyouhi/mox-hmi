@@ -1,11 +1,15 @@
-use crate::bridge;
+use crate::bridge::{self, GuideSection};
+use dioxus::html::MountedData;
+use dioxus::html::ScrollBehavior;
+use dioxus::html::geometry::PixelsVector2D;
 use dioxus::prelude::*;
+use std::cell::Cell;
+use std::rc::Rc;
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum GuideTab {
-    Start,
-    TwoD,
-    ThreeD,
+#[derive(Debug, Clone, Copy, Default)]
+struct AppliedGuideScroll {
+    section: Option<GuideSection>,
+    revision: u64,
 }
 
 #[component]
@@ -14,7 +18,7 @@ pub fn OperationGuide() -> Element {
         return rsx! {};
     }
 
-    let mut tab = use_signal(|| GuideTab::Start);
+    let section = bridge::guide_section();
     let gamepad = bridge::gamepad_status();
     let gamepad_text = if gamepad.connected {
         if gamepad.is_dualsense() {
@@ -25,6 +29,46 @@ pub fn OperationGuide() -> Element {
     } else {
         "手柄未连接".to_string()
     };
+
+    let mut body_mounted = use_signal(|| None::<Rc<MountedData>>);
+    let applied_scroll = use_hook(|| Rc::new(Cell::new(AppliedGuideScroll::default())));
+    use_effect(move || {
+        let section = bridge::guide_section();
+        let request = bridge::guide_scroll_request();
+        let Some(mounted) = body_mounted.read().clone() else {
+            return;
+        };
+        let previous = applied_scroll.get();
+        let reset = previous.section != Some(section);
+        if !reset && previous.revision == request.revision {
+            return;
+        }
+        applied_scroll.set(AppliedGuideScroll {
+            section: Some(section),
+            revision: request.revision,
+        });
+        let delta = if reset { 0.0 } else { request.delta };
+        spawn(async move {
+            let Ok(offset) = mounted.get_scroll_offset().await else {
+                return;
+            };
+            let max_scroll = match (
+                mounted.get_scroll_size().await,
+                mounted.get_client_rect().await,
+            ) {
+                (Ok(size), Ok(rect)) => (size.height - rect.size.height).max(0.0),
+                _ => f64::MAX,
+            };
+            let target = if reset {
+                0.0
+            } else {
+                (offset.y + delta).clamp(0.0, max_scroll)
+            };
+            let _ = mounted
+                .scroll(PixelsVector2D::new(0.0, target), ScrollBehavior::Instant)
+                .await;
+        });
+    });
 
     rsx! {
         div {
@@ -63,39 +107,43 @@ pub fn OperationGuide() -> Element {
 
                 nav { class: "guide-tabs", aria_label: "指引章节",
                     button {
-                        class: if tab() == GuideTab::Start { "guide-tab is-active" } else { "guide-tab" },
+                        class: if section == GuideSection::Start { "guide-tab is-active" } else { "guide-tab" },
                         "data-testid": "guide-tab-start",
-                        aria_pressed: tab() == GuideTab::Start,
-                        onclick: move |_| tab.set(GuideTab::Start),
+                        aria_pressed: section == GuideSection::Start,
+                        onclick: move |_| bridge::set_guide_section(GuideSection::Start),
                         "开始与画面"
                     }
                     button {
-                        class: if tab() == GuideTab::TwoD { "guide-tab is-active" } else { "guide-tab" },
+                        class: if section == GuideSection::TwoD { "guide-tab is-active" } else { "guide-tab" },
                         "data-testid": "guide-tab-2d",
-                        aria_pressed: tab() == GuideTab::TwoD,
-                        onclick: move |_| tab.set(GuideTab::TwoD),
+                        aria_pressed: section == GuideSection::TwoD,
+                        onclick: move |_| bridge::set_guide_section(GuideSection::TwoD),
                         "2D 操作"
                     }
                     button {
-                        class: if tab() == GuideTab::ThreeD { "guide-tab is-active" } else { "guide-tab" },
+                        class: if section == GuideSection::ThreeD { "guide-tab is-active" } else { "guide-tab" },
                         "data-testid": "guide-tab-3d",
-                        aria_pressed: tab() == GuideTab::ThreeD,
-                        onclick: move |_| tab.set(GuideTab::ThreeD),
+                        aria_pressed: section == GuideSection::ThreeD,
+                        onclick: move |_| bridge::set_guide_section(GuideSection::ThreeD),
                         "3D 操作"
                     }
                 }
 
-                div { class: "guide-body", "data-testid": "guide-content",
-                    match tab() {
-                        GuideTab::Start => rsx! { GuideStart {} },
-                        GuideTab::TwoD => rsx! { GuideTwoD {} },
-                        GuideTab::ThreeD => rsx! { GuideThreeD {} },
+                div {
+                    class: "guide-body",
+                    "data-testid": "guide-content",
+                    onmounted: move |event| body_mounted.set(Some(event.data())),
+                    match section {
+                        GuideSection::Start => rsx! { GuideStart {} },
+                        GuideSection::TwoD => rsx! { GuideTwoD {} },
+                        GuideSection::ThreeD => rsx! { GuideThreeD {} },
                     }
                 }
 
                 footer { class: "guide-foot",
                     span { "F1 打开 / 关闭指引" }
-                    span { "DualSense Create 打开指引 · Circle 关闭" }
+                    span { "手柄：L1 / R1 或 ← / → 切换章节" }
+                    span { "↑ / ↓ 或左摇杆滚动 · Circle 关闭" }
                     button {
                         class: "mini-button",
                         onclick: move |_| bridge::set_guide_open(false),
@@ -115,7 +163,7 @@ fn GuideStart() -> Element {
             ol { class: "guide-steps",
                 li {
                     strong { "选择画面类型。" }
-                    span { "左侧“画面”标题栏点击 +，选择“空白 2D 画面”或“3D 机房画面”。" }
+                    span { "左侧“画面”标题栏点击 +，选择“空白 2D 画面”或“3D 机房画面”；手柄可按住 L3 再按 Create，在快捷菜单中新建并切换。" }
                 }
                 li {
                     strong { "添加内容。" }
@@ -126,17 +174,21 @@ fn GuideStart() -> Element {
                     span { "在画布或左侧结构树选择节点；⇧/⌘ 点击可多选，空白处拖动可框选。悬停未选节点或设备时会显示微弱发光轮廓。2D 可拖动整组节点并拖角点缩放；3D 可直接拖动整组设备，或用键盘、手柄和右侧检查器精确修改。" }
                 }
                 li {
-                    strong { "保存并运行。" }
-                    span { "工程自动保存；“运行”切换到只读运行态。F1 可随时重新打开本指引。" }
+                    strong { "自动保存并运行。" }
+                    span { "工程在编辑后自动保存，无需手动点保存；“运行”切换到只读运行态。F1 可随时重新打开本指引。" }
                 }
             }
             div { class: "guide-callout",
                 strong { "3D 是怎么出现的？" }
                 p { "新建 3D 画面后，Bevy 自动生成机房地面、墙体和灯光；设备节点来自左侧 3D 设备库。选中设备后会出现青色选择环，右侧可编辑 X/Y/Z、旋转、缩放和 GLB 路径。" }
             }
+            div { class: "guide-callout",
+                strong { "手柄快捷菜单：L3 + Create" }
+                p { "打开后可添加当前画面的 2D 图元或 3D 设备、新建 2D/3D 画面、切换上一个/下一个画面。× 执行，○ 返回/关闭；添加的节点会自动选中并出现在视野中心，随后用左摇杆拖动、方向键微调。" }
+            }
             div { class: "guide-callout is-soft",
-                strong { "对齐反馈" }
-                p { "2D 拖动、键盘轻推和手柄移动都会吸附到画板/节点中心线。吸附瞬间播放轻提示音；macOS 原生编辑器同时触发触控板线性马达，若浏览器暴露 DualSense vibrationActuator，手柄也会同步短振。" }
+                strong { "对齐与震动反馈" }
+                p { "2D 拖动、键盘轻推和手柄移动都会吸附到画板/节点中心线。吸附瞬间播放轻提示音；macOS 原生编辑器优先通过 CoreHaptics 触发 DualSense 短振，同时保留触控板线性马达反馈；Web 端则尝试 DualSense vibrationActuator。" }
             }
             div { class: "guide-callout is-soft",
                 strong { "标准快捷键与输入优先级" }
@@ -144,7 +196,7 @@ fn GuideStart() -> Element {
             }
             div { class: "guide-callout is-soft",
                 strong { "三类输入的能力边界" }
-                p { "画布内的选择、框选、组移动、复制/剪切/粘贴、删除、撤销/重做和画面切换均可由键盘+鼠标、键盘+触控板或 DualSense 完成。手柄用 L3+□ 全选，用 L3+×/○/△ 复制/剪切/粘贴；新建画面/节点、文本、颜色和 Tag 绑定仍需键鼠或触控板。" }
+                p { "画布内的选择、框选、组移动、复制/剪切/粘贴、删除、撤销/重做、画面切换，以及通过 L3+Create 菜单新建画面/添加节点，均可由 DualSense 完成。手柄用 L3+□ 全选，用 L3+×/○/△ 复制/剪切/粘贴；文本、颜色和 Tag 绑定仍需键鼠或触控板。" }
             }
         }
     }
@@ -185,7 +237,7 @@ fn GuideTwoD() -> Element {
                     tr { td { kbd { "Shift" } " + " kbd { "Q" } kbd { "E" } } td { "单选时旋转 15°" } }
                     tr { td { kbd { "F" } } td { "聚焦全部所选节点" } }
                     tr { td { kbd { "⌘Z" } kbd { "⌘⇧Z" } kbd { "Ctrl+Y" } } td { "撤销 / 重做 / 重做" } }
-                    tr { td { kbd { "⌘S" } } td { "立即保存工程" } }
+                    tr { td { kbd { "⌘S" } } td { "立即刷写自动保存（日常无需手动操作）" } }
                     tr { td { kbd { "Delete" } kbd { "Backspace" } } td { "删除所选节点（锁定节点除外）" } }
                     tr { td { kbd { "Esc" } } td { "取消选择 / 关闭指引" } }
                 }
@@ -198,7 +250,7 @@ fn GuideTwoD() -> Element {
                     tr { td { "左摇杆" } td { "移动整个所选组；松开后合并为一次撤销记录" } }
                     tr { td { "右摇杆" } td { "平移画布" } }
                     tr { td { "L2 / R2" } td { "缩小 / 放大画布" } }
-                    tr { td { "方向键" } td { "整组轻推 2 个单位，可精确对齐中心线" } }
+                    tr { td { "方向键" } td { "整组轻推 2 个单位；靠近中心线时不会被吸附卡住" } }
                     tr { td { "Cross ×" } td { "聚焦所选节点" } }
                     tr { td { "Circle ○" } td { "取消选择" } }
                     tr { td { "Square □" } td { "原地复制所选节点" } }
@@ -208,8 +260,11 @@ fn GuideTwoD() -> Element {
                     tr { td { "按住 L3 + Cross × / Circle ○ / Triangle △" } td { "复制 / 剪切 / 粘贴所选节点" } }
                     tr { td { "Options" } td { "撤销" } }
                     tr { td { "按住 L3 + Options" } td { "重做" } }
+                    tr { td { "按住 L3 + Create" } td { "打开手柄快捷菜单：添加组件、新建 2D/3D 画面、切换画面" } }
                     tr { td { "按住 L3 + L1 / R1" } td { "切换上一个 / 下一个画面" } }
                     tr { td { "Create" } td { "打开 / 关闭本指引" } }
+                    tr { td { "指引已打开：L1 / R1 或 ← / →" } td { "切换上一章 / 下一章" } }
+                    tr { td { "指引已打开：↑ / ↓ 或左摇杆" } td { "滚动指引正文" } }
                     tr { td { "DualSense 触摸板按下" } td { "打开 / 关闭参数模式（必须单选且未锁定）" } }
                     tr { td { "参数模式：方向键 ↑ / ↓" } td { "切换 X、Y、宽度、高度、旋转和组件数值" } }
                     tr { td { "参数模式：方向键 ← / →" } td { "调整当前参数" } }
@@ -261,7 +316,7 @@ fn GuideThreeD() -> Element {
                     tr { td { kbd { "⌘D" } } td { "原地复制所选设备，不改写剪贴板" } }
                     tr { td { kbd { "Delete" } } td { "删除所选设备（锁定设备除外）" } }
                     tr { td { kbd { "⌘Z" } kbd { "⌘⇧Z" } kbd { "Ctrl+Y" } } td { "撤销 / 重做 / 重做" } }
-                    tr { td { kbd { "⌘S" } } td { "立即保存工程" } }
+                    tr { td { kbd { "⌘S" } } td { "立即刷写自动保存（日常无需手动操作）" } }
                 }
             }
 
@@ -286,8 +341,11 @@ fn GuideThreeD() -> Element {
                     tr { td { "按住 L3 + Cross × / Circle ○ / Triangle △" } td { "复制 / 剪切 / 粘贴所选设备" } }
                     tr { td { "Options" } td { "撤销" } }
                     tr { td { "按住 L3 + Options" } td { "重做" } }
+                    tr { td { "按住 L3 + Create" } td { "打开手柄快捷菜单：添加组件、新建 2D/3D 画面、切换画面" } }
                     tr { td { "按住 L3 + L1 / R1" } td { "切换上一个 / 下一个画面" } }
                     tr { td { "Create" } td { "打开 / 关闭本指引" } }
+                    tr { td { "指引已打开：L1 / R1 或 ← / →" } td { "切换上一章 / 下一章" } }
+                    tr { td { "指引已打开：↑ / ↓ 或左摇杆" } td { "滚动指引正文" } }
                     tr { td { "DualSense 触摸板按下" } td { "打开 / 关闭参数模式（必须单选且未锁定）" } }
                     tr { td { "参数模式：方向键 ↑ / ↓" } td { "切换 X/Y/Z、旋转、缩放和模型尺寸" } }
                     tr { td { "参数模式：方向键 ← / →" } td { "调整当前参数" } }

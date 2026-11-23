@@ -5,9 +5,10 @@ use dioxus::prelude::*;
 pub fn AiControlPanel() -> Element {
     let connection = control::AI_CONNECTION();
     let activities = control::AI_ACTIVITY();
+    let webmcp_available = control::WEBMCP_AVAILABLE();
     let mut collapsed = use_signal(|| false);
 
-    if connection == AiConnection::Disabled {
+    if connection == AiConnection::Disabled && activities.is_empty() {
         return rsx! {};
     }
     let has_activity = !activities.is_empty();
@@ -15,11 +16,21 @@ pub fn AiControlPanel() -> Element {
         return rsx! {};
     }
 
-    let (status_text, status_class, url) = match &connection {
-        AiConnection::Connecting(url) => ("正在连接", "is-waiting", url.clone()),
-        AiConnection::Connected(url) => ("已连接", "is-ok", url.clone()),
-        AiConnection::Disconnected(reason, url) => (reason.as_str(), "is-error", url.clone()),
-        AiConnection::Disabled => ("已关闭", "is-disabled", String::new()),
+    let (status_text, status_class, url) = if webmcp_available
+        && connection == AiConnection::Disabled
+    {
+        (
+            "WebMCP 就绪",
+            "is-ok",
+            "webmcp://document.modelContext".to_string(),
+        )
+    } else {
+        match &connection {
+            AiConnection::Connecting(url) => ("正在连接", "is-waiting", url.clone()),
+            AiConnection::Connected(url) => ("已连接", "is-ok", url.clone()),
+            AiConnection::Disconnected(reason, url) => (reason.as_str(), "is-error", url.clone()),
+            AiConnection::Disabled => ("已关闭", "is-disabled", String::new()),
+        }
     };
     let running = activities
         .iter()
@@ -72,7 +83,7 @@ pub fn AiControlPanel() -> Element {
                     if activities.is_empty() {
                         li { class: "ai-empty",
                             strong { "等待 AI 操作" }
-                            span { "连接 MCP 控制工具后，工具调用会实时显示在这里。" }
+                            span { "连接 MCP，或在支持 WebMCP 的浏览器中直接调用工具，操作会实时显示在这里。" }
                         }
                     }
                     for activity in activities {

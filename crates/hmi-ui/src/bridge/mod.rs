@@ -1,8 +1,9 @@
 use dioxus::prelude::*;
 use hmi_core::{
-    BatchCommandResult, ButtonAction, CommandResult, DeviceNode, EditorCommand, EditorSession,
-    HmiError, ProjectDocument, Rect, Screen, TagSnapshot, TagValue, UiNode, bas_demo,
-    export_filename, from_json, to_json, unique_node_id,
+    BarDirection, BatchCommandResult, ButtonAction, CommandResult, DeviceModel, DeviceNode,
+    EditorCommand, EditorSession, EquipmentKind, HexColor, HmiError, ProjectDocument, Rect, Screen,
+    TagSnapshot, TagValue, TagValueType, TextAlign, UiNode, Widget2D, bas_demo, export_filename,
+    from_json, to_json, unique_node_id,
 };
 #[cfg(not(target_arch = "wasm32"))]
 use std::sync::{
@@ -85,6 +86,122 @@ pub struct ControllerTuningHud {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GamepadMenuHud {
+    pub title: String,
+    pub items: Vec<GamepadMenuItemHud>,
+    pub index: usize,
+    pub hint: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GamepadMenuItemHud {
+    pub label: String,
+    pub detail: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum GuideSection {
+    #[default]
+    Start,
+    TwoD,
+    ThreeD,
+}
+
+impl GuideSection {
+    pub fn next(self, direction: isize) -> Self {
+        match (self, direction.is_negative()) {
+            (GuideSection::Start, true) => GuideSection::ThreeD,
+            (GuideSection::Start, false) => GuideSection::TwoD,
+            (GuideSection::TwoD, true) => GuideSection::Start,
+            (GuideSection::TwoD, false) => GuideSection::ThreeD,
+            (GuideSection::ThreeD, true) => GuideSection::TwoD,
+            (GuideSection::ThreeD, false) => GuideSection::Start,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct GuideScrollRequest {
+    pub revision: u64,
+    pub delta: f64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PaletteEntry {
+    pub kind: &'static str,
+    pub label: &'static str,
+}
+
+pub const PALETTE_2D: &[PaletteEntry] = &[
+    PaletteEntry {
+        kind: "panel",
+        label: "面板",
+    },
+    PaletteEntry {
+        kind: "label",
+        label: "文本",
+    },
+    PaletteEntry {
+        kind: "value-card",
+        label: "数值卡",
+    },
+    PaletteEntry {
+        kind: "status-lamp",
+        label: "状态灯",
+    },
+    PaletteEntry {
+        kind: "bar-gauge",
+        label: "仪表条",
+    },
+    PaletteEntry {
+        kind: "button",
+        label: "按钮",
+    },
+    PaletteEntry {
+        kind: "pipe",
+        label: "管线",
+    },
+    PaletteEntry {
+        kind: "equipment",
+        label: "设备",
+    },
+];
+
+pub const PALETTE_3D: &[PaletteEntry] = &[
+    PaletteEntry {
+        kind: "ahu",
+        label: "AHU",
+    },
+    PaletteEntry {
+        kind: "fan",
+        label: "风机",
+    },
+    PaletteEntry {
+        kind: "pump",
+        label: "水泵",
+    },
+    PaletteEntry {
+        kind: "duct",
+        label: "风管",
+    },
+    PaletteEntry {
+        kind: "pipe-3d",
+        label: "水管",
+    },
+    PaletteEntry {
+        kind: "valve",
+        label: "阀门",
+    },
+];
+
+pub fn palette_entries_for_screen(screen: &Screen) -> &'static [PaletteEntry] {
+    match screen {
+        Screen::TwoD { .. } => PALETTE_2D,
+        Screen::ThreeD { .. } => PALETTE_3D,
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EngineStatus {
     Starting,
     Ready,
@@ -121,6 +238,10 @@ pub static GUIDE_OPEN: GlobalSignal<bool> = Signal::global(|| false);
 pub static GAMEPAD_STATUS: GlobalSignal<GamepadStatus> = Signal::global(GamepadStatus::default);
 pub static CONTROLLER_TUNING_HUD: GlobalSignal<Option<ControllerTuningHud>> =
     Signal::global(|| None);
+pub static GAMEPAD_MENU_HUD: GlobalSignal<Option<GamepadMenuHud>> = Signal::global(|| None);
+pub static GUIDE_SECTION: GlobalSignal<GuideSection> = Signal::global(GuideSection::default);
+pub static GUIDE_SCROLL_REQUEST: GlobalSignal<GuideScrollRequest> =
+    Signal::global(GuideScrollRequest::default);
 
 thread_local! {
     static SESSION: RefCell<Option<Rc<RefCell<EditorSession>>>> = const { RefCell::new(None) };
@@ -128,6 +249,7 @@ thread_local! {
     static CLIPBOARD: RefCell<Option<CanvasClipboard>> = const { RefCell::new(None) };
     static PASTE_SERIAL: Cell<u32> = const { Cell::new(0) };
     static VIEW_CENTER_2D: Cell<[f32; 2]> = const { Cell::new([800.0, 450.0]) };
+    static VIEW_FOCUS_3D: Cell<[f32; 3]> = const { Cell::new([0.0, 1.4, 0.0]) };
     static ZOOM_2D: Cell<f32> = const { Cell::new(1.0) };
     static SCENE_SHORTCUTS_SUPPRESSED_UNTIL_MS: Cell<f64> = const { Cell::new(0.0) };
     static UI_RUNTIME_PINNED: Cell<bool> = const { Cell::new(false) };
@@ -819,6 +941,33 @@ pub fn toggle_guide() {
     set_guide_open(open);
 }
 
+pub fn guide_section() -> GuideSection {
+    GUIDE_SECTION()
+}
+
+pub fn set_guide_section(section: GuideSection) {
+    if *GUIDE_SECTION.read() != section {
+        *GUIDE_SECTION.write() = section;
+    }
+}
+
+pub fn cycle_guide_section(direction: isize) {
+    set_guide_section(guide_section().next(direction));
+}
+
+pub fn guide_scroll_request() -> GuideScrollRequest {
+    GUIDE_SCROLL_REQUEST()
+}
+
+pub fn request_guide_scroll(delta: f64) {
+    if !delta.is_finite() || delta.abs() < f64::EPSILON {
+        return;
+    }
+    let mut request = GUIDE_SCROLL_REQUEST.write();
+    request.revision = request.revision.wrapping_add(1);
+    request.delta = delta;
+}
+
 pub fn text_entry_focused() -> bool {
     #[cfg(not(target_arch = "wasm32"))]
     {
@@ -929,6 +1078,20 @@ pub fn set_controller_tuning_hud(hud: Option<ControllerTuningHud>) {
 
 pub fn controller_tuning_active() -> bool {
     controller_tuning_hud().is_some()
+}
+
+pub fn gamepad_menu_hud() -> Option<GamepadMenuHud> {
+    GAMEPAD_MENU_HUD()
+}
+
+pub fn set_gamepad_menu_hud(hud: Option<GamepadMenuHud>) {
+    if *GAMEPAD_MENU_HUD.read() != hud {
+        *GAMEPAD_MENU_HUD.write() = hud;
+    }
+}
+
+pub fn gamepad_menu_open() -> bool {
+    gamepad_menu_hud().is_some()
 }
 
 fn runtime_mode_requested() -> bool {
@@ -1093,6 +1256,14 @@ pub fn zoom_2d() -> f32 {
     ZOOM_2D.with(Cell::get)
 }
 
+pub fn view_focus_3d() -> [f32; 3] {
+    VIEW_FOCUS_3D.with(Cell::get)
+}
+
+pub fn set_view_focus_3d(focus: [f32; 3]) {
+    VIEW_FOCUS_3D.with(|cell| cell.set(focus));
+}
+
 pub fn set_zoom_2d(zoom: f32) {
     ZOOM_2D.with(|cell| cell.set(zoom));
 }
@@ -1115,6 +1286,322 @@ pub fn clear_scene_labels_3d() {
     if !VIEW_LABELS_3D.read().is_empty() {
         *VIEW_LABELS_3D.write() = Vec::new();
     }
+}
+
+pub fn create_screen(three_d: bool) -> Result<String, String> {
+    let project = project();
+    let screen_number = project
+        .screens
+        .iter()
+        .filter(|screen| {
+            if three_d {
+                matches!(screen, Screen::ThreeD { .. })
+            } else {
+                matches!(screen, Screen::TwoD { .. })
+            }
+        })
+        .count()
+        + 1;
+    let screen_id = next_screen_id(&project);
+    let screen = if three_d {
+        Screen::ThreeD {
+            id: screen_id.clone(),
+            name: format!("3D 机房 {screen_number}"),
+            background: HexColor("#071217".to_string()),
+            nodes: Vec::new(),
+        }
+    } else {
+        Screen::TwoD {
+            id: screen_id.clone(),
+            name: format!("新画面 {screen_number}"),
+            background: HexColor("#071217".to_string()),
+            nodes: vec![UiNode {
+                id: next_palette_node_id(&project, "new.bg"),
+                name: "画面背景".to_string(),
+                rect: Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    width: 1600.0,
+                    height: 900.0,
+                },
+                rotation_deg: 0.0,
+                z: 0,
+                visible: true,
+                locked: true,
+                widget: Widget2D::Panel {
+                    fill: HexColor("#071217".to_string()),
+                    stroke: HexColor("#1f3540".to_string()),
+                    stroke_width: 1.0,
+                },
+                bindings: Vec::new(),
+            }],
+        }
+    };
+    execute(EditorCommand::AddScreen { screen }).map_err(|error| error.to_string())?;
+    select_screen(&screen_id);
+    Ok(screen_id)
+}
+
+pub fn add_palette_node(kind: &str) -> Result<String, String> {
+    let project = project();
+    let Some(screen) = active_screen_snapshot() else {
+        return Err("请先选择画面".to_string());
+    };
+    match screen {
+        Screen::TwoD { id, nodes, .. } => add_2d_palette_node(&project, &id, &nodes, kind),
+        Screen::ThreeD { id, nodes, .. } => add_3d_palette_node(&project, &id, &nodes, kind),
+    }
+}
+
+fn add_2d_palette_node(
+    project: &ProjectDocument,
+    screen_id: &str,
+    nodes: &[UiNode],
+    kind: &str,
+) -> Result<String, String> {
+    let (width, height, display_name) = match kind {
+        "panel" => (420.0, 260.0, "新面板"),
+        "label" => (260.0, 48.0, "新文本"),
+        "value-card" => (240.0, 112.0, "新数值卡"),
+        "status-lamp" => (230.0, 72.0, "新状态灯"),
+        "bar-gauge" => (260.0, 96.0, "新仪表条"),
+        "button" => (240.0, 72.0, "新按钮"),
+        "pipe" => (260.0, 24.0, "新管线"),
+        _ => (180.0, 120.0, "新设备"),
+    };
+    let center = view_center_2d();
+    let mut x = (center[0] - width * 0.5).clamp(0.0, 1600.0 - width);
+    let mut y = (center[1] - height * 0.5).clamp(0.0, 900.0 - height);
+    for _ in 0..20 {
+        let candidate = Rect {
+            x,
+            y,
+            width,
+            height,
+        };
+        let overlaps = nodes.iter().any(|node| {
+            if !node.visible || node.locked {
+                return false;
+            }
+            let other = node.rect;
+            candidate.x < other.right() + 8.0
+                && candidate.right() + 8.0 > other.x
+                && candidate.y < other.bottom() + 8.0
+                && candidate.bottom() + 8.0 > other.y
+        });
+        if !overlaps {
+            break;
+        }
+        x = (x + 24.0).min(1600.0 - width);
+        y = (y + 24.0).min(900.0 - height);
+    }
+
+    let widget = match kind {
+        "panel" => Widget2D::Panel {
+            fill: HexColor("#101e27".to_string()),
+            stroke: HexColor("#2a4b58".to_string()),
+            stroke_width: 1.0,
+        },
+        "label" => Widget2D::Label {
+            text: "新文本".to_string(),
+            font_size: 24.0,
+            color: HexColor("#e8f2f4".to_string()),
+            align: TextAlign::Left,
+        },
+        "value-card" => Widget2D::ValueCard {
+            label: "新数值卡".to_string(),
+        },
+        "status-lamp" => Widget2D::StatusLamp {
+            label: "新状态灯".to_string(),
+        },
+        "bar-gauge" => Widget2D::BarGauge {
+            min: 0.0,
+            max: 100.0,
+            direction: BarDirection::Horizontal,
+        },
+        "button" => {
+            let Some(tag) = project
+                .tags
+                .iter()
+                .find(|tag| tag.writable && tag.value_type == TagValueType::Bool)
+            else {
+                return Err("请先创建一个可写 Bool Tag 再添加按钮".to_string());
+            };
+            Widget2D::Button {
+                label: "新按钮".to_string(),
+                action: ButtonAction::ToggleTag {
+                    tag_id: tag.id.clone(),
+                },
+            }
+        }
+        "pipe" => Widget2D::Pipe {
+            points: vec![[0.0, height * 0.5], [width, height * 0.5]],
+            thickness: 8.0,
+            color: HexColor("#2d6d77".to_string()),
+        },
+        _ => Widget2D::EquipmentSymbol {
+            equipment: EquipmentKind::Fan,
+            label: "新设备".to_string(),
+        },
+    };
+    let id = next_palette_node_id(project, kind);
+    let z = nodes.iter().map(|node| node.z).max().unwrap_or(0) + 1;
+    let node = UiNode {
+        id: id.clone(),
+        name: display_name.into(),
+        rect: Rect {
+            x,
+            y,
+            width,
+            height,
+        },
+        rotation_deg: 0.0,
+        z,
+        visible: true,
+        locked: false,
+        widget,
+        bindings: Vec::new(),
+    };
+    execute(EditorCommand::Add2dNode {
+        screen_id: screen_id.to_string(),
+        node,
+    })
+    .map_err(|error| error.to_string())?;
+    select_node(Some(id.clone()));
+    Ok(id)
+}
+
+fn add_3d_palette_node(
+    project: &ProjectDocument,
+    screen_id: &str,
+    nodes: &[DeviceNode],
+    kind: &str,
+) -> Result<String, String> {
+    let (display_name, y, model) = match kind {
+        "ahu" => (
+            "AHU-新增",
+            1.4,
+            DeviceModel::Ahu {
+                size: [4.0, 2.8, 2.2],
+                color: HexColor("#23434d".to_string()),
+            },
+        ),
+        "fan" => (
+            "风机-新增",
+            1.0,
+            DeviceModel::Fan {
+                size: [1.8, 1.8, 1.8],
+                color: HexColor("#31505a".to_string()),
+            },
+        ),
+        "pump" => (
+            "水泵-新增",
+            0.55,
+            DeviceModel::Pump {
+                size: [1.4, 1.1, 1.4],
+                color: HexColor("#31505a".to_string()),
+            },
+        ),
+        "duct" => (
+            "风管-新增",
+            2.0,
+            DeviceModel::Duct {
+                length: 3.0,
+                diameter: 0.55,
+                color: HexColor("#24434f".to_string()),
+            },
+        ),
+        "pipe-3d" => (
+            "水管-新增",
+            0.5,
+            DeviceModel::Pipe {
+                length: 3.0,
+                diameter: 0.18,
+                color: HexColor("#2d6d77".to_string()),
+            },
+        ),
+        _ => (
+            "阀门-新增",
+            1.0,
+            DeviceModel::Valve {
+                size: 0.7,
+                color: HexColor("#31505a".to_string()),
+            },
+        ),
+    };
+    let id = next_palette_node_id(project, kind);
+    let focus = view_focus_3d();
+    let node = DeviceNode {
+        id: id.clone(),
+        name: display_name.into(),
+        position: next_3d_position(nodes, focus, y),
+        rotation_deg: [0.0, 0.0, 0.0],
+        scale: [1.0, 1.0, 1.0],
+        visible: true,
+        locked: false,
+        label: Some(display_name.into()),
+        model,
+        bindings: Vec::new(),
+    };
+    execute(EditorCommand::Add3dNode {
+        screen_id: screen_id.to_string(),
+        node,
+    })
+    .map_err(|error| error.to_string())?;
+    select_node(Some(id.clone()));
+    Ok(id)
+}
+
+fn next_3d_position(nodes: &[DeviceNode], focus: [f32; 3], y: f32) -> [f32; 3] {
+    let mut position = [focus[0], y, focus[2]];
+    for step in 0..24 {
+        let angle = step as f32 * 2.399_963_2;
+        let radius = if step == 0 {
+            0.0
+        } else {
+            1.1 * (step as f32).sqrt()
+        };
+        let candidate = [
+            focus[0] + radius * angle.cos(),
+            y,
+            focus[2] + radius * angle.sin(),
+        ];
+        let occupied = nodes.iter().any(|node| {
+            let dx = node.position[0] - candidate[0];
+            let dz = node.position[2] - candidate[2];
+            dx * dx + dz * dz < 1.6 * 1.6
+        });
+        if !occupied {
+            position = candidate;
+            break;
+        }
+    }
+    position
+}
+
+fn next_palette_node_id(project: &ProjectDocument, prefix: &str) -> String {
+    let used = all_node_ids(project);
+    for index in 1..=10_000 {
+        let candidate = format!("node.{prefix}.{index}");
+        if !used.contains(&candidate) {
+            return candidate;
+        }
+    }
+    format!("node.{prefix}.{}", now_ms() as u64)
+}
+
+fn next_screen_id(project: &ProjectDocument) -> String {
+    for index in 1..=10_000 {
+        let candidate = format!("screen.new.{index}");
+        if project
+            .screens
+            .iter()
+            .all(|screen| screen.id() != candidate)
+        {
+            return candidate;
+        }
+    }
+    format!("screen.new.{}", now_ms() as u64)
 }
 
 pub fn project_contains_node(project: &ProjectDocument, node_id: &str) -> bool {

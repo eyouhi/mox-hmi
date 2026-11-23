@@ -70,7 +70,16 @@ objc2-game-controller = { version = "0.3.2", default-features = false, features 
   "GCControllerDirectionPad",
   "GCControllerElement",
   "GCDevice",
+  "GCDeviceHaptics",
   "GCExtendedGamepad",
   "GCInputNames",
   "GCPhysicalInputProfile",
+] }
+objc2-core-haptics = { version = "0.3.2", default-features = false, features = [
+  "std",
+  "CHHapticEngine",
+  "CHHapticEvent",
+  "CHHapticParameter",
+  "CHHapticPattern",
+  "CHHapticPatternPlayer",
 ] }

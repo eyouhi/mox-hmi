@@ -56,7 +56,7 @@ pub fn controller_tuning(
     mut state: ResMut<ControllerTuningState>,
 ) {
     state.suppress_shortcuts = false;
-    if !pad.connected || !input::scene_input_enabled() {
+    if !pad.connected || !input::scene_input_enabled() || crate::bridge::gamepad_menu_open() {
         deactivate(&mut state);
         return;
     }

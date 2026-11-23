@@ -42,6 +42,8 @@ impl DevServer {
             "false",
             "--interactive",
             "false",
+            "--hot-patch",
+            "false",
             "--debug-symbols",
             "false",
         ]);

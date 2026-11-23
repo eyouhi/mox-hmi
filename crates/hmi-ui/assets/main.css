@@ -1383,6 +1383,69 @@ ul.ai-activity-list { min-height: 5.25rem; max-height: 13rem; overflow-y: auto; 
 .controller-tuning-value { margin-top: 0.375rem; color: var(--cyan); font: 650 1.25rem/1.15 "SFMono-Regular", Consolas, monospace; }
 .controller-tuning-help { margin-top: 0.25rem; color: var(--muted); font-size: 0.625rem; line-height: 1.5; }
 
+.gamepad-menu {
+  position: fixed;
+  top: 5.25rem;
+  left: 50%;
+  z-index: 96;
+  width: min(30rem, calc(100vw - 2rem));
+  padding: 0.6875rem 0.8125rem 0.625rem;
+  transform: translateX(-50%);
+  border: 1px solid rgba(55, 230, 212, 0.48);
+  border-radius: 0.5625rem;
+  background: rgba(7, 18, 23, 0.9);
+  box-shadow: 0 0.75rem 2.5rem rgba(0, 0, 0, 0.34);
+  backdrop-filter: blur(1rem) saturate(1.15);
+  color: var(--text);
+  pointer-events: none;
+}
+
+.gamepad-menu-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5625rem;
+}
+
+.gamepad-menu-mark {
+  display: grid;
+  place-items: center;
+  width: 1.625rem;
+  height: 1.625rem;
+  flex: 0 0 auto;
+  border: 1px solid rgba(55, 230, 212, 0.54);
+  border-radius: 0.3125rem;
+  background: rgba(55, 230, 212, 0.08);
+  color: var(--cyan);
+  font: 700 0.5625rem/1 "SFMono-Regular", Consolas, monospace;
+}
+
+.gamepad-menu-head > div { display: flex; min-width: 0; flex-direction: column; gap: 0.0625rem; }
+.gamepad-menu-head strong { font-size: 0.75rem; }
+.gamepad-menu-index { margin-left: auto; color: var(--muted); font: 0.625rem/1.2 "SFMono-Regular", Consolas, monospace; }
+.gamepad-menu-list { display: grid; gap: 0.125rem; margin-top: 0.5rem; max-height: min(20rem, 48vh); overflow: hidden; }
+
+.gamepad-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  min-height: 1.75rem;
+  padding: 0.25rem 0.5rem;
+  border: 1px solid transparent;
+  border-radius: 0.3125rem;
+  color: var(--muted);
+  font-size: 0.6875rem;
+}
+
+.gamepad-menu-item.is-active {
+  border-color: rgba(55, 230, 212, 0.5);
+  background: rgba(55, 230, 212, 0.1);
+  color: var(--text);
+}
+
+.gamepad-menu-item-label { flex: 0 0 auto; font-weight: 650; }
+.gamepad-menu-item-detail { min-width: 0; margin-left: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted-2); font-size: 0.625rem; }
+.gamepad-menu-help { margin-top: 0.375rem; color: var(--muted); font-size: 0.625rem; line-height: 1.5; }
+
 .guide-backdrop {
   position: fixed;
   inset: 0;

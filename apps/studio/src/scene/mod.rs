@@ -1,5 +1,7 @@
 pub mod assets;
 pub mod controller_tuning;
+pub mod gamepad_haptics;
+pub mod gamepad_menu;
 pub mod input;
 pub mod orbit;
 pub mod plugin;

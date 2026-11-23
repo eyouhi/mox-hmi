@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+pub mod tools;
+
 pub const PROTOCOL_VERSION: u32 = 1;
 pub const DEFAULT_CONTROL_PORT: u16 = 17880;
 pub const DEFAULT_CONTROL_PATH: &str = "/control";

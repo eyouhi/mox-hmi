@@ -1,6 +1,6 @@
 # MOX HMI Studio
 
-面向申通地铁车站 BAS 场景的 HMI 编辑器与运行器 MVP。编辑器是 Dioxus Native 0.8 的 macOS 原生窗口，内嵌 Bevy WebGPU 2D/3D 场景、触控板触觉反馈和 AI 控制隧道；运行器是独立的 Dioxus Web 0.8 + Bevy WebGPU WASM 站点，可通过 `?runtime=1` 直接进入只读运行态。两端共享 `hmi-ui` 界面层与 Bevy 场景层。
+面向申通地铁车站 BAS 场景的 HMI 编辑器与运行器 MVP。编辑器是 Dioxus Native 0.8 的 macOS 原生窗口，内嵌 Bevy WebGPU 2D/3D 场景、触控板触觉反馈和 AI 控制隧道；运行器是独立的 Dioxus Web 0.8 + Bevy WebGPU WASM 站点，可通过 `?runtime=1` 直接进入只读运行态，并在支持 WebMCP 的浏览器中暴露页面内 AI 工具。两端共享 `hmi-ui` 界面层与 Bevy 场景层。
 
 ## 已实现能力
 
@@ -8,7 +8,7 @@
 - 可从左侧“画面 +”新建空白 2D 画面或 3D 机房画面；3D 设备库包含 AHU、风机、水泵、风管、水管和阀门。
 - 2D 节点拖拽支持画板与节点中心吸附、琥珀色对齐线，以及吸附瞬间的音效和线性马达反馈。
 - 3D 机房数字孪生：AHU、风机、水泵、风管、水管、阀门，以及 GLB 设备加载入口。
-- 2D/3D 均支持鼠标、MacBook 触控板、键盘和 PS5 DualSense；应用内按 `F1` 或手柄 Create 打开完整操作指引。
+- 2D/3D 均支持鼠标、MacBook 触控板、键盘和 PS5 DualSense；应用内按 `F1` 或手柄 Create 打开完整操作指引，`L3 + Create` 打开手柄快捷菜单。
 - Tag 数据字典、模拟器、输入/输出映射和画面绑定；编辑态与运行态均以 4 Hz 推进仿真。
 - 画面/节点增删改、Tag 增删改、绑定编辑、撤销/重做、JSON 导入导出、localStorage 自动保存。
 - 运行态只读画面、Tag 镜像、按钮写 Tag、设备详情卡；运行交互不会进入工程、撤销栈或自动保存。
@@ -22,7 +22,7 @@
 - 页面提供跳过链接、单一 `main`、按层级组织的标题、命名的侧栏和导航；画面切换使用 `aria-current`，不伪装成 ARIA tabs。
 - 所有表单控件都有显式标签或可访问名称；数值字段在失焦/回车校验失败时设置 `aria-invalid`、关联并播报可见错误文本。自定义回车提交会检查 IME 组合状态。
 - WebGPU 画布可获得键盘焦点；2D 支持方向键轻推，3D 支持方向键旋转、WASD 移动设备、`+`/`-` 缩放和 `Home` 重置。运行态同时提供隐藏的完整 Tag 数据列表，避免画布成为唯一信息源。
-- 顶栏的“操作指引”按钮和 `F1` 可达完整键盘、鼠标、触控板与手柄映射；手柄连接状态在顶栏实时显示。
+- 顶栏的“操作指引”按钮和 `F1` 可达完整键盘、鼠标、触控板与手柄映射；手柄连接状态在顶栏实时显示。编辑命令 500 ms 防抖自动保存，因此顶栏不再保留冗余的“保存”按钮。
 - 字号使用 `rem`，控件高度随文本增长；支持窄窗单列布局，并为 200% 文本缩放预留重排，同时适配减少动效、增强对比度和系统强制颜色模式。
 
 ## 技术栈
@@ -101,7 +101,7 @@ dx serve --web --port 8088
 
 浏览器需为桌面版 Chrome/Edge 120+，并在可用 GPU 上启用 WebGPU；生产环境必须使用 HTTPS。Safari、Firefox 和移动端不在本期支持范围内。窄窗口会切换为纵向布局，但触屏和平板不是验收目标。
 
-触控板线性马达反馈只在 `cargo x edit` 启动的 macOS 原生编辑器中可用；`cargo x run` 是浏览器运行器。PS5 DualSense 在原生编辑器优先通过 Apple GameController 框架读取，无法使用时回退到 Bevy `bevy_gilrs`；Web 运行器通过 Gamepad API 的 `vibrationActuator` 尽力触发振动。不支持时静默降级。
+触控板线性马达反馈只在 `cargo x edit` 启动的 macOS 原生编辑器中可用；`cargo x run` 是浏览器运行器。PS5 DualSense 在原生编辑器优先通过 Apple GameController 框架读取，并通过 GameController 暴露的 CoreHaptics 引擎触发短振；无法使用时回退到 Bevy `bevy_gilrs` rumble。Web 运行器通过 Gamepad API 的 `vibrationActuator` 尽力触发振动。不支持时静默降级。
 
 中心吸附音效使用 Web Audio，并在拖拽开始的手势内初始化；震动反馈通过 Vibration API 尽力触发，macOS 桌面 Chrome/Edge 通常不暴露该能力。
 
@@ -139,7 +139,7 @@ http://127.0.0.1:8088/?runtime=1
 
 ## 操作指引
 
-应用内点击顶栏“操作指引”、画布右下角“操作指引 · F1”，或按 `F1` 打开分章节指引。手柄连接后按 Create 也可以打开，Circle 关闭。点击画布后键盘快捷键生效；输入框、下拉框或可编辑文本获得焦点时，场景快捷键和手柄编辑会暂停。
+应用内点击顶栏“操作指引”、画布右下角“操作指引 · F1”，或按 `F1` 打开分章节指引。手柄连接后按 Create 也可以打开；指引内用 `L1` / `R1` 或方向键 `←` / `→` 切换章节，用方向键 `↑` / `↓` 或左摇杆滚动正文，Circle 或再次按 Create 关闭。点击画布后键盘快捷键生效；输入框、下拉框或可编辑文本获得焦点时，场景快捷键和手柄编辑会暂停。
 
 ### 新建和编辑画面
 
@@ -147,6 +147,16 @@ http://127.0.0.1:8088/?runtime=1
 2. 2D 从“2D 图元”添加面板、文本、数值卡、状态灯、仪表条、按钮、管线和设备符号；3D 从“3D 设备”添加 AHU、风机、水泵、风管、水管和阀门。
 3. 在画布或左侧结构树选择节点。2D 可直接拖动、缩放和旋转；3D 用键盘、手柄或右侧属性检查器修改位置，旋转、缩放和 GLB 路径在检查器中编辑。
 4. 工程自动保存；顶栏“运行”进入只读运行态。3D 画面由 Bevy 自动生成地面、墙体和灯光，项目 JSON 只保存设备节点。
+
+### 手柄快捷菜单
+
+连接手柄后按住 `L3`（左摇杆按下）再按 Create，打开手柄快捷菜单。菜单可以：
+
+- 添加当前画面的 2D 图元或 3D 设备；新节点会出现在当前视野中心并自动选中，随后用左摇杆拖动，用方向键精确微调。
+- 新建并切换到 2D 空白画面或 3D 机房画面。
+- 循环切换到上一个 / 下一个画面。
+
+十字键 `↑` / `↓` 选择菜单项，Cross 执行，Circle 返回或关闭，再次按 Create 也可关闭。手柄快捷菜单与 Create 帮助页互不抢占按键：菜单打开时 Create 只关闭菜单。
 
 ### 画布通用快捷键
 
@@ -158,7 +168,7 @@ http://127.0.0.1:8088/?runtime=1
 | `⌘C` / `⌘V` / `⌘X` | 复制 / 粘贴 / 剪切；粘贴生成的 ID 唯一，并保留相对位置 |
 | `⌘D` | 原地复制，不改写剪贴板 |
 | `⌘Z` / `⌘⇧Z` / `Ctrl+Y` | 撤销 / 重做 |
-| `⌘S` | 立即保存 |
+| `⌘S` | 立即刷写自动保存（日常无需手动操作） |
 | `Delete` / `Backspace` | 删除所选节点；锁定节点不会参与组删除 |
 | `Esc` | 关闭指引，或取消选择 |
 
@@ -171,9 +181,9 @@ http://127.0.0.1:8088/?runtime=1
 | 鼠标 | 左键选择；拖拽已选节点移动整组；空白处拖拽框选；拖角点缩放单选节点；中键或 `Space` + 左键平移；滚轮缩放。 |
 | 触控板 | 单指拖拽已选节点移动整组；拖拽空白处框选；双指滚动平移；捏合或 `Cmd(⌘)` + 滚动缩放。 |
 | 键盘 | 方向键整组轻推 1 单位，`Shift` + 方向键轻推 10；`Q`/`E` 单选旋转 1°，`Shift` 加速到 15°；`F` 聚焦全部所选节点。复制、删除、撤销等见通用快捷键。 |
-| DualSense | 左摇杆移动整组；右摇杆平移；L2/R2 缩放；方向键整组精确轻推；Cross 聚焦；Circle 取消选择；Square 原地复制；Triangle 删除；L1/R1 单选切换；L3 + Square 全选；L3 + Cross/Circle/Triangle 复制/剪切/粘贴；Options 撤销；L3 + Options 重做；L3 + L1/R1 切换画面；Create 打开指引。 |
+| DualSense | 左摇杆移动整组；右摇杆平移；L2/R2 缩放；方向键整组精确轻推（靠近中心线时会正常脱离吸附，不会被吸住）；Cross 聚焦；Circle 取消选择；Square 原地复制；Triangle 删除；L1/R1 单选切换；L3 + Square 全选；L3 + Cross/Circle/Triangle 复制/剪切/粘贴；Options 撤销；L3 + Options 重做；L3 + Create 打开快捷菜单；L3 + L1/R1 切换画面；Create 打开指引。 |
 
-2D 的组拖动、键盘轻推、方向键和手柄移动都会以选择包围盒中心吸附画板/节点中心线，显示琥珀色对齐线并播放轻提示音；macOS 原生编辑器触发触控板线性马达，支持 `vibrationActuator` 的 DualSense 同步短振。悬停未选节点会显示微弱的多层发光轮廓。
+2D 的组拖动、键盘轻推、方向键和手柄移动都会以选择包围盒中心吸附画板/节点中心线，显示琥珀色对齐线并播放轻提示音；macOS 原生编辑器优先触发 DualSense CoreHaptics 短振，同时保留触控板线性马达反馈，Web 端则尝试 `vibrationActuator`。微调时若起点已经落在吸附范围内，会直接采用原始位移，避免“刚离开中心又被吸回”的卡住感。悬停未选节点会显示微弱的多层发光轮廓。
 
 触控板捏合由浏览器 `wheel` 事件中的 `ctrlKey`/`metaKey` 识别，双指平移仍使用普通滚动；不按修饰键时不会被误判为缩放。
 
@@ -184,13 +194,13 @@ http://127.0.0.1:8088/?runtime=1
 | 鼠标 | 左键单击选择设备；`⇧`/`⌘` + 单击多选；拖拽设备沿地面移动整组；空白处左键拖拽框选；`Option/Alt` + 左键拖拽旋转视角；中键拖拽平移；滚轮拉近/拉远。 |
 | 触控板 | 拖拽设备移动整组；拖拽空白处框选；`Option/Alt` + 左键拖拽旋转视角；双指滚动平移；捏合或 `Cmd(⌘)` + 滚动缩放。 |
 | 键盘 | 方向键旋转视角；`+`/`-` 缩放；`Home` 重置；`F` 聚焦全部所选设备；`WASD` 沿世界 X/Z 整组移动，`Q`/`E` 调整 Y，`Shift` 将步长从 0.1 提升到 1.0。复制、删除、撤销等见通用快捷键。 |
-| DualSense | 左摇杆移动整组设备 X/Z；按住 L3 切换垂直模式（左右 X、上下 Y）；右摇杆旋转视角；按住 L3 + 右摇杆平移观察中心；L2/R2 缩放；方向键整组精确轻推 X/Z，按住 L3 时上下调整 Y；Cross 聚焦；Circle 取消选择；R3 重置视角；Square 原地复制；Triangle 删除；L1/R1 单选切换；L3 + Square 全选；L3 + Cross/Circle/Triangle 复制/剪切/粘贴；Options 撤销；L3 + Options 重做；L3 + L1/R1 切换画面；Create 打开指引。 |
+| DualSense | 左摇杆移动整组设备 X/Z；按住 L3 切换垂直模式（左右 X、上下 Y）；右摇杆旋转视角；按住 L3 + 右摇杆平移观察中心；L2/R2 缩放；方向键整组精确轻推 X/Z，按住 L3 时上下调整 Y；Cross 聚焦；Circle 取消选择；R3 重置视角；Square 原地复制；Triangle 删除；L1/R1 单选切换；L3 + Square 全选；L3 + Cross/Circle/Triangle 复制/剪切/粘贴；Options 撤销；L3 + Options 重做；L3 + Create 打开快捷菜单；L3 + L1/R1 切换画面；Create 打开指引。 |
 
 摇杆移动采用预览 + 松手提交，一次连续移动只产生一条撤销记录。框选使用设备 8 个包围盒角点的屏幕投影；鼠标/触控板拖拽整组设备同样只产生一条撤销记录。悬停未选设备会显示微弱的多层包围盒发光轮廓，GLB 子网格也会参与拾取。当前 3D 编辑采用“选择 + 变换 + 属性”的工作流，不提供工业建模软件式多轴 Gizmo；旋转和缩放请使用右侧属性检查器或手柄参数模式。参数模式要求单选且未锁定。
 
 ### 手柄连接
 
-在 macOS 蓝牙设置中配对 DualSense，按一下 PS 键唤醒后按任意键；顶栏会显示连接状态。原生编辑器优先通过 Apple GameController 框架读取手柄，macOS 26+ 的蓝牙 DualSense 不需要“输入监控”权限；框架不可用时才回退到 Bevy `bevy_gilrs`。Web 运行器通过标准 Gamepad API 读取。振动均按设备能力尽力触发，不支持时其余键鼠/触控板操作不受影响。
+在 macOS 蓝牙设置中配对 DualSense，按一下 PS 键唤醒后按任意键；顶栏会显示连接状态。原生编辑器优先通过 Apple GameController 框架读取手柄，并通过该框架为 DualSense 创建 CoreHaptics 引擎，吸附时触发手柄短振；macOS 26+ 的蓝牙 DualSense 不需要“输入监控”权限。框架或控制器不支持触觉反馈时才回退到 Bevy `bevy_gilrs` rumble。Web 运行器通过标准 Gamepad API 读取，并尽力使用 `vibrationActuator`。振动不可用时不影响其余键鼠/触控板操作。
 
 ## AI 控制隧道
 
@@ -259,6 +269,29 @@ http://127.0.0.1:8088/?control=ws://127.0.0.1:17880/control&control_token=change
 - `mox_hmi_execute_command`：执行选择、切换模式、编辑节点、写 Tag、撤销/重做、保存等动作。
 
 支持的主要动作：`select_screen`、`select_node`、`set_mode`、`execute_editor_command`、`write_tag`、`undo`、`redo`、`save`、`reset_camera_3d`。
+
+### WebMCP（Web 运行器可选增强）
+
+Web 运行器还会检测 `document.modelContext`，存在时注册同一组 `mox_hmi_*` 工具。WebMCP 不是 MCP 的替代品：它在页面打开期间存在，只支持 tools，不提供 MCP 的 resources/prompts；原生 macOS 编辑器没有 DOM，继续使用上面的 MCP 控制服务。
+
+WebMCP 是 Chrome 的实验能力。本地验收可使用 Chrome 149+ 的源试用，或在启动参数中加入：
+
+```text
+--enable-blink-features=WebMCP
+```
+
+页面无需额外 URL 参数；打开编辑器或运行器后，可在 DevTools 中检查：
+
+```js
+await document.modelContext.getTools()
+```
+
+注册的工具与 MCP 一致：
+
+- `mox_hmi_status`、`mox_hmi_list_commands`、`mox_hmi_inspect_project` 标记为只读；工程读取结果标记为不可信内容。
+- `mox_hmi_execute_command` 标记为有实际后果的操作，浏览器或智能体可据此要求用户确认。
+
+WebMCP 工具调用仍进入 `run_action` → `EditorCommand` → 校验/撤销栈/自动保存这条链路，不会直接修改文件。页面内的操作同样会显示在“AI 操作隧道”面板中。
 
 控制服务当前只提供明文 WebSocket。生产环境应部署在带 TLS 的反向代理后，使用 `wss://` 并强制配置 `--token`；不要将无令牌端口暴露到非受信网络。
 

@@ -20,6 +20,7 @@ const DEFAULT_CHROME: &str = "/tmp/chrome-dl/app/chrome-mac-arm64/Google Chrome 
 const BROWSER_ARGS: &[&str] = &[
     "--enable-unsafe-webgpu",
     "--enable-features=WebGPU",
+    "--enable-blink-features=WebMCP",
     "--ignore-gpu-blocklist",
     "--disable-gpu-sandbox",
     "--disable-background-timer-throttling",

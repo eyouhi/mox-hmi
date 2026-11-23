@@ -175,6 +175,7 @@ pub fn orbit_system(
 
         orbit.apply(&mut transform);
     }
+    crate::bridge::set_view_focus_3d(orbit.focus.to_array());
 }
 
 fn frame_selected(cached: &CachedProject, orbit: &mut OrbitCamera) {

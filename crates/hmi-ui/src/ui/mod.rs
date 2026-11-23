@@ -3,6 +3,7 @@ pub mod common;
 pub mod controller_tuning;
 pub mod device_details;
 pub mod file_io;
+pub mod gamepad_menu;
 pub mod guide;
 pub mod inspector;
 pub mod left_panel;

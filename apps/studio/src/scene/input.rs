@@ -395,6 +395,9 @@ pub fn pulse_gamepad_rumble(
     if !super::snap_feedback::take_gamepad_rumble() {
         return;
     }
+    if super::gamepad_haptics::pulse() {
+        return;
+    }
     for gamepad in gamepads.iter() {
         requests.write(bevy::input::gamepad::GamepadRumbleRequest::Add {
             gamepad,
@@ -407,16 +410,68 @@ pub fn pulse_gamepad_rumble(
     }
 }
 
-pub fn gamepad_guide_controls(pad: Res<GamepadState>) {
+pub fn gamepad_guide_controls(pad: Res<GamepadState>, time: Res<Time>, mut repeat: Local<f32>) {
+    const DPAD_STEP: f64 = 92.0;
+    const DPAD_REPEAT_SECS: f32 = 0.11;
+    const STICK_SPEED: f64 = 760.0;
+
     if !pad.connected {
+        *repeat = 0.0;
+        return;
+    }
+    if crate::bridge::gamepad_menu_open() {
+        *repeat = 0.0;
         return;
     }
     if pad.just_pressed(PadButton::Create) {
-        crate::bridge::toggle_guide();
+        if pad.pressed(PadButton::L3) {
+            return;
+        }
+        if crate::bridge::guide_open() {
+            crate::bridge::set_guide_open(false);
+        } else {
+            crate::bridge::toggle_guide();
+        }
+        *repeat = 0.0;
         return;
     }
-    if crate::bridge::guide_open() && pad.just_pressed(PadButton::Circle) {
+    if !crate::bridge::guide_open() {
+        *repeat = 0.0;
+        return;
+    }
+
+    if pad.just_pressed(PadButton::Circle) {
         crate::bridge::set_guide_open(false);
+        *repeat = 0.0;
+        return;
+    }
+    if pad.just_pressed(PadButton::L1) || pad.just_pressed(PadButton::DpadLeft) {
+        crate::bridge::cycle_guide_section(-1);
+    }
+    if pad.just_pressed(PadButton::R1) || pad.just_pressed(PadButton::DpadRight) {
+        crate::bridge::cycle_guide_section(1);
+    }
+
+    let dt = time.delta_secs().min(0.05);
+    let stick = pad.left_stick().y as f64;
+    if stick.abs() > 0.01 {
+        crate::bridge::request_guide_scroll(-stick * STICK_SPEED * dt as f64);
+    }
+
+    let direction = if pad.pressed(PadButton::DpadUp) {
+        -1.0
+    } else if pad.pressed(PadButton::DpadDown) {
+        1.0
+    } else {
+        0.0
+    };
+    if direction == 0.0 {
+        *repeat = 0.0;
+    } else if *repeat <= 0.0 {
+        crate::bridge::request_guide_scroll(direction * DPAD_STEP);
+        *repeat = DPAD_REPEAT_SECS;
+    } else {
+        *repeat = (*repeat - dt).max(0.0);
     }
 }
 
@@ -427,7 +482,7 @@ pub fn scene_input_enabled() -> bool {
 }
 
 pub fn gamepad_input_enabled() -> bool {
-    scene_input_enabled()
+    scene_input_enabled() && !crate::bridge::gamepad_menu_open()
 }
 
 pub fn keyboard_input_enabled() -> bool {

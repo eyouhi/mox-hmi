@@ -124,15 +124,6 @@ pub fn Topbar() -> Element {
                 }
                 button {
                     class: "toolbar-button",
-                    "data-testid": "save-button",
-                    onclick: move |_| match bridge::persist_now() {
-                        Ok(()) => bridge::set_notice(NoticeLevel::Info, "已保存"),
-                        Err(error) => bridge::set_notice(NoticeLevel::Error, error),
-                    },
-                    "保存"
-                }
-                button {
-                    class: "toolbar-button",
                     "data-testid": "import-button",
                     onclick: move |_| request_import(),
                     "导入"

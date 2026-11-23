@@ -4,6 +4,7 @@ pub mod control;
 pub mod shortcuts;
 mod timer;
 pub mod ui;
+mod webmcp;
 
 pub use app::App;
 

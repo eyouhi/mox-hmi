@@ -283,6 +283,117 @@ pub fn run(args: Vec<String>) -> Result<(), String> {
                 "[...document.querySelectorAll('[data-testid=\"ai-activity\"]')].some((el) => el.textContent.includes('AI 撤销刚才的重命名'))",
             )?)
         })?;
+
+        let webmcp_available = harness.eval_bool(
+            "!!(document.modelContext && typeof document.modelContext.getTools === 'function')",
+        )?;
+        if webmcp_available {
+            harness.eval(
+                r#"(() => {
+                    window.__moxWebmcpTools = null;
+                    window.__moxWebmcpError = null;
+                    document.modelContext.getTools()
+                        .then((tools) => { window.__moxWebmcpTools = tools.map((tool) => tool.name); })
+                        .catch((error) => { window.__moxWebmcpError = String(error); });
+                    return true;
+                })()"#,
+            )?;
+            harness.wait_until("WebMCP 工具注册", Duration::from_secs(15), || {
+                Ok(harness.eval_bool(
+                    "Array.isArray(window.__moxWebmcpTools) || !!window.__moxWebmcpError",
+                )?)
+            })?;
+            let error = harness
+                .eval("window.__moxWebmcpError")?
+                .as_str()
+                .unwrap_or_default()
+                .to_string();
+            if !error.is_empty() {
+                return Err(format!("WebMCP getTools 失败: {error}"));
+            }
+            let names_present = harness.eval_bool(
+                r#"(() => {
+                    const expected = [
+                        "mox_hmi_status",
+                        "mox_hmi_list_commands",
+                        "mox_hmi_inspect_project",
+                        "mox_hmi_execute_command"
+                    ];
+                    return expected.every((name) => window.__moxWebmcpTools.includes(name));
+                })()"#,
+            )?;
+            if !names_present {
+                return Err(format!(
+                    "WebMCP 工具不完整: {}",
+                    harness.eval("window.__moxWebmcpTools")?
+                ));
+            }
+
+            harness.eval(
+                r#"(() => {
+                    window.__moxWebmcpResult = null;
+                    window.__moxWebmcpStatus = null;
+                    window.__moxWebmcpExecuteError = null;
+                    (async () => {
+                        const tools = await document.modelContext.getTools();
+                        const statusTool = tools.find((candidate) => candidate.name === "mox_hmi_status");
+                        if (!statusTool) throw new Error("mox_hmi_status 未注册");
+                        window.__moxWebmcpStatus = await document.modelContext.executeTool(statusTool, {});
+                        const tool = tools.find((candidate) => candidate.name === "mox_hmi_execute_command");
+                        if (!tool) throw new Error("mox_hmi_execute_command 未注册");
+                        window.__moxWebmcpResult = await document.modelContext.executeTool(tool, {
+                            action: "select_node",
+                            description: "WebMCP 选中排风机 EF-01",
+                            params: { node_id: "node.exhaust_fan" }
+                        });
+                    })().catch((error) => {
+                        window.__moxWebmcpExecuteError = String(error);
+                    });
+                    return true;
+                })()"#,
+            )?;
+            harness.wait_until("WebMCP 工具执行", Duration::from_secs(15), || {
+                Ok(harness.eval_bool(
+                    "(!!window.__moxWebmcpStatus && !!window.__moxWebmcpResult) || !!window.__moxWebmcpExecuteError",
+                )?)
+            })?;
+            let error = harness
+                .eval("window.__moxWebmcpExecuteError")?
+                .as_str()
+                .unwrap_or_default()
+                .to_string();
+            if !error.is_empty() {
+                return Err(format!("WebMCP executeTool 失败: {error}"));
+            }
+            let status = harness.eval("window.__moxWebmcpStatus")?;
+            let status = match status {
+                Value::String(text) => serde_json::from_str(&text).map_err(|error| {
+                    format!("WebMCP 状态结果不是合法 JSON 字符串: {error}\n{text}")
+                })?,
+                status => status,
+            };
+            if status["transport"].as_str() != Some("webmcp") || status["connected"] != true {
+                return Err(format!("WebMCP 状态工具结果无效: {status}"));
+            }
+            let result = harness.eval("window.__moxWebmcpResult")?;
+            let result = match result {
+                Value::String(text) => serde_json::from_str(&text)
+                    .map_err(|error| format!("WebMCP 结果不是合法 JSON 字符串: {error}\n{text}"))?,
+                result => result,
+            };
+            if result["ok"].as_bool() != Some(true) {
+                return Err(format!("WebMCP executeTool 结果无效: {result}"));
+            }
+            harness.wait_text("selection-id", "node.exhaust_fan", Duration::from_secs(10))?;
+            harness.wait_until("WebMCP AI 操作记录可见", Duration::from_secs(10), || {
+                Ok(harness.eval_bool(
+                    "[...document.querySelectorAll('[data-testid=\"ai-activity\"]')].some((el) => el.textContent.includes('WebMCP 选中排风机 EF-01'))",
+                )?)
+            })?;
+            println!("PASS: WebMCP tools");
+        } else {
+            println!("SKIP: WebMCP 不可用（需要 Chrome WebMCP 源试用或测试 flag）");
+        }
         harness.screenshot("/tmp/mox-hmi-ai-control.png")?;
         let errors = harness.console_errors()?;
         if !errors.is_empty() {

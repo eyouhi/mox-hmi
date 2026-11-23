@@ -123,6 +123,18 @@ impl CenterSnapTargets {
             },
         )
     }
+
+    fn near_x(&self, center: f32, tolerance: f32) -> bool {
+        self.x
+            .iter()
+            .any(|target| (target - center).abs() <= tolerance)
+    }
+
+    fn near_y(&self, center: f32, tolerance: f32) -> bool {
+        self.y
+            .iter()
+            .any(|target| (target - center).abs() <= tolerance)
+    }
 }
 
 fn union_rect<'a>(rects: impl Iterator<Item = &'a Rect>) -> Option<Rect> {
@@ -678,7 +690,14 @@ pub fn two_d_input(
                 };
                 let raw = clamped_group_move(bounds, delta);
                 let targets = CenterSnapTargets::for_nodes(nodes, &selected);
-                let snap = snap_moved_axes(targets.snap(raw, camera_state.zoom), raw, delta);
+                let snap = fine_nudge_snap(
+                    targets.snap(raw, camera_state.zoom),
+                    raw,
+                    delta,
+                    bounds,
+                    &targets,
+                    camera_state.zoom,
+                );
                 let engaged = snap
                     .x
                     .is_some_and(|target| edit_state.keyboard_snap.0 != Some(target))
@@ -807,6 +826,29 @@ fn snap_moved_axes(mut snap: CenterSnap, raw: Rect, delta: [f32; 2]) -> CenterSn
         snap.x = None;
     }
     if delta[1].abs() <= f32::EPSILON {
+        snap.rect.y = raw.y;
+        snap.y = None;
+    }
+    snap
+}
+
+fn fine_nudge_snap(
+    snap: CenterSnap,
+    raw: Rect,
+    delta: [f32; 2],
+    original: Rect,
+    targets: &CenterSnapTargets,
+    zoom: f32,
+) -> CenterSnap {
+    let mut snap = snap_moved_axes(snap, raw, delta);
+    let tolerance = CENTER_SNAP_SCREEN_PX / zoom.max(f32::EPSILON);
+    let center_x = original.x + original.width * 0.5;
+    let center_y = original.y + original.height * 0.5;
+    if delta[0].abs() > f32::EPSILON && targets.near_x(center_x, tolerance) {
+        snap.rect.x = raw.x;
+        snap.x = None;
+    }
+    if delta[1].abs() > f32::EPSILON && targets.near_y(center_y, tolerance) {
         snap.rect.y = raw.y;
         snap.y = None;
     }
@@ -1052,7 +1094,7 @@ fn nudge_2d(
     };
     let raw = clamped_group_move(bounds, delta);
     let targets = CenterSnapTargets::for_nodes(nodes, selected);
-    let snap = targets.snap(raw, zoom);
+    let snap = fine_nudge_snap(targets.snap(raw, zoom), raw, delta, bounds, &targets, zoom);
     let engaged = snap
         .x
         .is_some_and(|target| edit_state.keyboard_snap.0 != Some(target))
@@ -1355,7 +1397,9 @@ pub fn publish_view_state(
 
 #[cfg(test)]
 mod tests {
-    use super::{drag_activation_reached, snap_moved_axes, wheel_pan_translation};
+    use super::{
+        CenterSnapTargets, drag_activation_reached, fine_nudge_snap, wheel_pan_translation,
+    };
     use bevy::prelude::Vec2;
     use hmi_core::{CenterSnap, Rect};
 
@@ -1380,26 +1424,37 @@ mod tests {
     }
 
     #[test]
-    fn keyboard_snap_keeps_unmoved_axis() {
-        let raw = Rect {
-            x: 651.0,
+    fn fine_nudge_escapes_an_existing_center_snap() {
+        let original = Rect {
+            x: 670.0,
             y: 250.0,
             width: 260.0,
             height: 180.0,
         };
-        let snap = CenterSnap {
+        let raw = Rect {
+            x: 671.0,
+            y: 250.0,
+            width: 260.0,
+            height: 180.0,
+        };
+        let sticky_snap = CenterSnap {
             rect: Rect {
                 x: 670.0,
-                y: 252.0,
+                y: 250.0,
                 width: 260.0,
                 height: 180.0,
             },
             x: Some(800.0),
-            y: Some(342.0),
+            y: Some(340.0),
         };
-        let snapped = snap_moved_axes(snap, raw, [1.0, 0.0]);
+        let targets = CenterSnapTargets {
+            x: vec![800.0],
+            y: vec![340.0],
+        };
+        let snapped = fine_nudge_snap(sticky_snap, raw, [1.0, 0.0], original, &targets, 1.0);
+        assert_eq!(snapped.rect.x, 671.0);
         assert_eq!(snapped.rect.y, 250.0);
+        assert_eq!(snapped.x, None);
         assert_eq!(snapped.y, None);
-        assert_eq!(snapped.rect.x, 670.0);
     }
 }

@@ -59,6 +59,15 @@ pub struct AiActivity {
 
 pub static AI_CONNECTION: GlobalSignal<AiConnection> = Signal::global(|| AiConnection::Disabled);
 pub static AI_ACTIVITY: GlobalSignal<Vec<AiActivity>> = Signal::global(Vec::new);
+pub static WEBMCP_AVAILABLE: GlobalSignal<bool> = Signal::global(|| false);
+
+pub fn mark_webmcp_available() {
+    let mut available = WEBMCP_AVAILABLE.write();
+    if *available {
+        return;
+    }
+    *available = true;
+}
 
 #[cfg(not(target_arch = "wasm32"))]
 static NEXT_NATIVE_ACTIVITY: AtomicU64 = AtomicU64::new(1);
@@ -297,21 +306,11 @@ fn handle_server_text(text: &str) {
 
 #[cfg(target_arch = "wasm32")]
 fn execute_request(id: u64, action: &str, label: &str, params: &Value) {
-    let started = js_sys::Date::now();
-    let detail = action_detail(action, params);
-    let activity_id = push_activity(label, &detail, AiStatus::Running);
-    let result = run_action(action, params);
-    let duration_ms = (js_sys::Date::now() - started).max(0.0) as u64;
+    let (result, duration_ms) = track_action(action, label, params);
     let state = current_state();
 
     match result {
         Ok(value) => {
-            let detail = value
-                .get("summary")
-                .and_then(Value::as_str)
-                .unwrap_or(&detail)
-                .to_string();
-            finish_activity(activity_id, AiStatus::Ok, &detail);
             send(BrowserMessage::Response {
                 id,
                 ok: true,
@@ -322,8 +321,6 @@ fn execute_request(id: u64, action: &str, label: &str, params: &Value) {
             });
         }
         Err(error) => {
-            finish_activity(activity_id, AiStatus::Error, &error);
-            bridge::set_notice(bridge::NoticeLevel::Error, format!("AI 操作失败：{error}"));
             send(BrowserMessage::Response {
                 id,
                 ok: false,
@@ -334,6 +331,32 @@ fn execute_request(id: u64, action: &str, label: &str, params: &Value) {
             });
         }
     }
+}
+
+#[cfg(target_arch = "wasm32")]
+pub fn track_action(action: &str, label: &str, params: &Value) -> (Result<Value, String>, u64) {
+    let started = js_sys::Date::now();
+    let detail = action_detail(action, params);
+    let activity_id = push_activity(label, &detail, AiStatus::Running);
+    let result = run_action(action, params);
+    let duration_ms = (js_sys::Date::now() - started).max(0.0) as u64;
+
+    match &result {
+        Ok(value) => {
+            let detail = value
+                .get("summary")
+                .and_then(Value::as_str)
+                .unwrap_or(&detail)
+                .to_string();
+            finish_activity(activity_id, AiStatus::Ok, &detail);
+        }
+        Err(error) => {
+            finish_activity(activity_id, AiStatus::Error, &error);
+            bridge::set_notice(bridge::NoticeLevel::Error, format!("AI 操作失败：{error}"));
+        }
+    }
+
+    (result, duration_ms)
 }
 
 pub fn run_action(action: &str, params: &Value) -> Result<Value, String> {

@@ -72,6 +72,7 @@ impl Plugin for HmiScenePlugin {
             .init_resource::<ThreeDEditState>()
             .init_resource::<super::two_d_edit::TwoDEditState>()
             .init_resource::<super::two_d_edit::TwoDCameraState>()
+            .init_resource::<super::gamepad_menu::GamepadMenuState>()
             .init_resource::<super::three_d::ThreeDPointerState>()
             .init_resource::<HoveredThreeD>()
             .add_systems(
@@ -91,11 +92,9 @@ impl Plugin for HmiScenePlugin {
                         settle_glb,
                         tag_device_meshes,
                         super::input::poll_gamepad,
-                        super::input::pulse_gamepad_rumble,
                     )
                         .chain(),
                     (
-                        super::input::gamepad_guide_controls,
                         super::controller_tuning::controller_tuning,
                         orbit_system,
                         super::three_d::pick_three_d,
@@ -103,6 +102,9 @@ impl Plugin for HmiScenePlugin {
                         three_d_edit,
                         super::two_d_edit::two_d_input,
                         super::input::gamepad_shortcuts,
+                        super::input::gamepad_guide_controls,
+                        super::gamepad_menu::gamepad_menu,
+                        super::input::pulse_gamepad_rumble,
                         super::two_d_edit::draw_two_d_overlay,
                         super::three_d_edit::draw_three_d_marquee,
                         super::three_d_edit::draw_three_d_hover,

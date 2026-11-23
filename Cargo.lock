@@ -5795,6 +5795,7 @@ dependencies = [
  "js-sys",
  "mox-hmi-ui",
  "objc2 0.6.5",
+ "objc2-core-haptics",
  "objc2-foundation 0.3.2",
  "objc2-game-controller",
  "wasm-bindgen",
@@ -6290,6 +6291,16 @@ dependencies = [
  "objc2 0.6.5",
  "objc2-core-foundation",
  "objc2-io-surface",
+]
+
+[[package]]
+name = "objc2-core-haptics"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dbf2dae8a5e651adec3af54059cbce15e3aadbf8913da9782e1e1affc29aa512"
+dependencies = [
+ "objc2 0.6.5",
+ "objc2-foundation 0.3.2",
 ]
 
 [[package]]

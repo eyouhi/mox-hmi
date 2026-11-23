@@ -3,6 +3,7 @@ use crate::ui::{
     ai_control::AiControlPanel,
     controller_tuning::ControllerTuningHud,
     device_details::DeviceDetails,
+    gamepad_menu::GamepadMenuHud,
     guide::OperationGuide,
     inspector::Inspector,
     left_panel::LeftPanel,
@@ -37,6 +38,7 @@ pub fn App() -> Element {
         }
         install_wheel_zoom_bridge();
         crate::control::start();
+        crate::webmcp::start();
     });
 
     #[cfg(target_arch = "wasm32")]
@@ -82,9 +84,9 @@ pub fn App() -> Element {
         .as_ref()
         .is_some_and(|screen| screen.is_two_d())
     {
-        "拖动/框选 · ⇧ 或 ⌘ 点击多选 · ⌘C/V/X · 空格/中键平移 · 双指捏合缩放 · F 聚焦"
+        "拖动/框选 · ⇧ 或 ⌘ 点击多选 · ⌘C/V/X · 空格/中键平移 · F 聚焦 · 手柄 L3+Create 菜单"
     } else {
-        "拖设备移动 · 空白拖框选 · Option+左拖旋转 · ⌘C/V/X · 双指捏合缩放"
+        "拖设备移动 · 空白拖框选 · Option+左拖旋转 · ⌘C/V/X · 手柄 L3+Create 菜单"
     };
 
     #[cfg(target_arch = "wasm32")]
@@ -331,6 +333,7 @@ pub fn App() -> Element {
             }
 
             ControllerTuningHud {}
+            GamepadMenuHud {}
         }
     }
 }
