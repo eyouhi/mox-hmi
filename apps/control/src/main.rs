@@ -92,6 +92,7 @@ async fn run() -> Result<(), String> {
         token: config.token.clone(),
         web_dir: None,
         haptic: None,
+        control_enabled: None,
     };
     let http_hub = hub.clone();
     tokio::spawn(async move {

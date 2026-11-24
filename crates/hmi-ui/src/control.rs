@@ -19,7 +19,10 @@ const RECONNECT_DELAY_MS: i32 = 3_000;
 const MAX_ACTIVITIES: usize = 20;
 
 #[cfg(not(target_arch = "wasm32"))]
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{
+    Arc, OnceLock,
+    atomic::{AtomicU64, Ordering},
+};
 #[cfg(not(target_arch = "wasm32"))]
 use time::OffsetDateTime;
 
@@ -60,6 +63,9 @@ pub struct AiActivity {
 pub static AI_CONNECTION: GlobalSignal<AiConnection> = Signal::global(|| AiConnection::Disabled);
 pub static AI_ACTIVITY: GlobalSignal<Vec<AiActivity>> = Signal::global(Vec::new);
 pub static WEBMCP_AVAILABLE: GlobalSignal<bool> = Signal::global(|| false);
+pub static MCP_SETTINGS_AVAILABLE: GlobalSignal<bool> = Signal::global(|| false);
+pub static MCP_ENABLED: GlobalSignal<bool> = Signal::global(|| false);
+pub static MCP_ENDPOINT: GlobalSignal<String> = Signal::global(String::new);
 
 pub fn mark_webmcp_available() {
     let mut available = WEBMCP_AVAILABLE.write();
@@ -71,6 +77,39 @@ pub fn mark_webmcp_available() {
 
 #[cfg(not(target_arch = "wasm32"))]
 static NEXT_NATIVE_ACTIVITY: AtomicU64 = AtomicU64::new(1);
+
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Clone)]
+pub struct NativeMcpBridge {
+    enabled: Arc<dyn Fn() -> bool + Send + Sync>,
+    set_enabled: Arc<dyn Fn(bool) -> Result<(), String> + Send + Sync>,
+    endpoint: Arc<dyn Fn() -> String + Send + Sync>,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl NativeMcpBridge {
+    pub fn new(
+        enabled: Arc<dyn Fn() -> bool + Send + Sync>,
+        set_enabled: Arc<dyn Fn(bool) -> Result<(), String> + Send + Sync>,
+        endpoint: Arc<dyn Fn() -> String + Send + Sync>,
+    ) -> Self {
+        Self {
+            enabled,
+            set_enabled,
+            endpoint,
+        }
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+static NATIVE_MCP_BRIDGE: OnceLock<NativeMcpBridge> = OnceLock::new();
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn install_native_mcp_bridge(bridge: NativeMcpBridge) -> Result<(), String> {
+    NATIVE_MCP_BRIDGE
+        .set(bridge)
+        .map_err(|_| "原生 MCP 设置桥接已安装".to_string())
+}
 
 #[cfg(target_arch = "wasm32")]
 #[derive(Debug, Clone)]
@@ -91,6 +130,11 @@ thread_local! {
 pub fn start() {
     #[cfg(not(target_arch = "wasm32"))]
     {
+        if let Some(bridge) = NATIVE_MCP_BRIDGE.get() {
+            *MCP_ENABLED.write() = (bridge.enabled)();
+            *MCP_ENDPOINT.write() = (bridge.endpoint)();
+            *MCP_SETTINGS_AVAILABLE.write() = true;
+        }
         *AI_CONNECTION.write() = AiConnection::Disabled;
     }
     #[cfg(target_arch = "wasm32")]
@@ -127,8 +171,77 @@ pub fn clear_activities() {
     AI_ACTIVITY.write().clear();
 }
 
+pub fn set_mcp_enabled(enabled: bool) -> Result<(), String> {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let bridge = NATIVE_MCP_BRIDGE
+            .get()
+            .ok_or_else(|| "MCP 设置桥接尚未安装".to_string())?;
+        (bridge.set_enabled)(enabled)?;
+        *MCP_ENABLED.write() = enabled;
+        *MCP_ENDPOINT.write() = (bridge.endpoint)();
+        *AI_CONNECTION.write() = AiConnection::Disabled;
+        Ok(())
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        let _ = enabled;
+        Err("MCP 开关仅在原生编辑器中可用".to_string())
+    }
+}
+
+pub fn codex_mcp_command() -> String {
+    let endpoint = MCP_ENDPOINT.peek().clone();
+    codex_mcp_command_for(&endpoint)
+}
+
+pub async fn copy_mcp_command(command: &str) -> Result<(), String> {
+    #[cfg(target_arch = "wasm32")]
+    {
+        use wasm_bindgen_futures::JsFuture;
+
+        let window = web_sys::window().ok_or_else(|| "window 不可用".to_string())?;
+        let promise = window.navigator().clipboard().write_text(command);
+        JsFuture::from(promise)
+            .await
+            .map(|_| ())
+            .map_err(|error| format!("浏览器剪贴板不可用: {error:?}"))
+    }
+    #[cfg(target_os = "macos")]
+    {
+        use objc2_app_kit::{NSPasteboard, NSPasteboardTypeString};
+        use objc2_foundation::NSString;
+
+        let pasteboard = NSPasteboard::generalPasteboard();
+        pasteboard.clearContents();
+        let text = NSString::from_str(command);
+        let data_type = unsafe { NSPasteboardTypeString };
+        if pasteboard.setString_forType(&text, data_type) {
+            Ok(())
+        } else {
+            Err("无法写入 macOS 剪贴板".to_string())
+        }
+    }
+    #[cfg(all(not(target_arch = "wasm32"), not(target_os = "macos")))]
+    {
+        let _ = command;
+        Err("当前平台暂不支持复制 Codex 命令".to_string())
+    }
+}
+
+fn codex_mcp_command_for(endpoint: &str) -> String {
+    if endpoint.is_empty() {
+        return String::new();
+    }
+    let endpoint = endpoint.replace('\'', "'\\''");
+    format!("codex mcp add mox-hmi --url '{endpoint}'")
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 pub fn mark_native_ai_connected() {
+    if !MCP_ENABLED() {
+        return;
+    }
     if matches!(
         &*AI_CONNECTION.peek(),
         AiConnection::Disabled | AiConnection::Disconnected(_, _)
@@ -708,4 +821,58 @@ fn decode_component(value: &str) -> String {
         }
     }
     String::from_utf8_lossy(&output).into_owned()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[cfg(not(target_arch = "wasm32"))]
+    use std::sync::atomic::AtomicBool;
+
+    #[test]
+    fn codex_command_contains_the_mcp_endpoint() {
+        assert_eq!(
+            codex_mcp_command_for("http://127.0.0.1:17880/mcp?token=token-123"),
+            "codex mcp add mox-hmi --url 'http://127.0.0.1:17880/mcp?token=token-123'"
+        );
+    }
+
+    #[test]
+    fn codex_command_is_empty_without_an_endpoint() {
+        assert!(codex_mcp_command_for("").is_empty());
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn native_mcp_bridge_updates_the_switch_state_and_command() {
+        fn root() -> Element {
+            rsx! {}
+        }
+
+        let mut dom = dioxus::core::VirtualDom::new(root);
+        dom.rebuild_in_place();
+        let _guard = dioxus::core::RuntimeGuard::new(dom.runtime());
+        let enabled = Arc::new(AtomicBool::new(false));
+        let read_enabled = enabled.clone();
+        let write_enabled = enabled.clone();
+        install_native_mcp_bridge(NativeMcpBridge::new(
+            Arc::new(move || read_enabled.load(Ordering::Acquire)),
+            Arc::new(move |next| {
+                write_enabled.store(next, Ordering::Release);
+                Ok(())
+            }),
+            Arc::new(|| "http://127.0.0.1:17880/mcp".to_string()),
+        ))
+        .unwrap();
+
+        start();
+        assert!(!MCP_ENABLED());
+
+        set_mcp_enabled(true).unwrap();
+        assert!(MCP_ENABLED());
+        assert_eq!(
+            codex_mcp_command(),
+            "codex mcp add mox-hmi --url 'http://127.0.0.1:17880/mcp'"
+        );
+    }
 }

@@ -1,14 +1,17 @@
 mod bevy_widget;
 mod control_native;
 mod haptic;
+mod mcp_settings;
 
 use control_native::NativeControl;
 use dioxus::prelude::*;
 use dioxus_native::{Config as NativeConfig, LogicalSize, WindowAttributes, use_window_event};
+use mcp_settings::{McpSettings, mcp_endpoint};
 use mox_hmi_control::{
     ControlHub,
     http::{self, HttpConfig},
 };
+use mox_hmi_ui::control::{NativeMcpBridge, install_native_mcp_bridge};
 use std::{
     env,
     net::SocketAddr,
@@ -61,7 +64,7 @@ fn print_help() {
          用法:\n  mox-hmi-editor [OPTIONS]\n\n\
          选项:\n  --port <PORT>       本地控制与 MCP 端口，默认 17880\n  \
          --token <TOKEN>     可选的控制令牌\n\n\
-         MCP 端点: http://127.0.0.1:<PORT>/mcp"
+         MCP 默认关闭，可在应用的“AI 操作隧道”面板中启用。"
     );
 }
 
@@ -78,15 +81,18 @@ fn run() -> Result<(), String> {
     mox_hmi_ui::bridge::install_native_haptic(haptic::snap);
     haptic::activate_app();
 
+    let mcp_settings = Arc::new(McpSettings::load());
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
         .map_err(|error| format!("创建 Tokio 运行时失败: {error}"))?;
     let hub = ControlHub::new(options.token.clone());
     let native_control = NativeControl::start(hub.clone(), runtime.handle())?;
+    let http_hub = hub.clone();
     let (address_tx, address_rx) = mpsc::channel::<Result<SocketAddr, String>>();
     let server_port = options.port;
     let server_token = options.token.clone();
+    let http_mcp_settings = mcp_settings.clone();
 
     std::thread::spawn(move || {
         runtime.block_on(async move {
@@ -110,8 +116,9 @@ fn run() -> Result<(), String> {
                 token: server_token,
                 web_dir: None,
                 haptic: Some(Arc::new(haptic::snap)),
+                control_enabled: Some(Arc::new(move || http_mcp_settings.enabled())),
             };
-            if let Err(error) = http::serve(listener, hub, config).await {
+            if let Err(error) = http::serve(listener, http_hub, config).await {
                 eprintln!("mox-hmi-editor: 本地服务退出: {error}");
             }
         });
@@ -121,7 +128,28 @@ fn run() -> Result<(), String> {
         .recv_timeout(Duration::from_secs(10))
         .map_err(|_| "启动本地服务超时".to_string())??;
     eprintln!("MOX HMI Studio (native): http://{address}/");
-    eprintln!("MCP endpoint: http://{address}/mcp");
+    if mcp_settings.enabled() {
+        eprintln!(
+            "MCP endpoint: {}",
+            mcp_endpoint(address, options.token.as_deref())
+        );
+    } else {
+        eprintln!("MCP disabled: enable it in the AI control tunnel panel");
+    }
+
+    let enabled_settings = mcp_settings.clone();
+    let toggle_settings = mcp_settings;
+    let toggle_hub = hub;
+    let endpoint = mcp_endpoint(address, options.token.as_deref());
+    install_native_mcp_bridge(NativeMcpBridge::new(
+        Arc::new(move || enabled_settings.enabled()),
+        Arc::new(move |enabled| {
+            toggle_settings.set_enabled(enabled)?;
+            toggle_hub.mark_ai_disconnected();
+            Ok(())
+        }),
+        Arc::new(move || endpoint.clone()),
+    ))?;
 
     bevy_widget::install_asset_path(asset_path()?);
     mox_hmi_ui::install_native_viewport(bevy_widget::viewport);

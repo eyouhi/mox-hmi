@@ -67,6 +67,10 @@ impl ControlHub {
         self.inner.ai_connected.store(true, Ordering::Relaxed);
     }
 
+    pub fn mark_ai_disconnected(&self) {
+        self.inner.ai_connected.store(false, Ordering::Relaxed);
+    }
+
     pub fn ai_connected(&self) -> bool {
         self.inner.ai_connected.load(Ordering::Relaxed)
     }

@@ -5778,8 +5778,11 @@ dependencies = [
  "objc2-app-kit 0.3.2",
  "objc2-foundation 0.3.2",
  "peniko",
+ "serde",
  "serde_json",
+ "tempfile",
  "tokio",
+ "toml",
  "wgpu 30.0.2",
 ]
 
@@ -5813,6 +5816,8 @@ dependencies = [
  "hmi-control-protocol",
  "hmi-core",
  "js-sys",
+ "objc2-app-kit 0.3.2",
+ "objc2-foundation 0.3.2",
  "serde_json",
  "time",
  "wasm-bindgen",

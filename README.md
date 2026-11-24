@@ -214,13 +214,15 @@ MOX HMI 提供一条本地控制隧道，让支持 MCP 的 AI 客户端读取工
 
 ### 启动控制服务
 
-macOS 编辑器已内嵌控制服务。正常使用原生编辑器时不需要单独启动 CLI，直接把 MCP 客户端指向：
+macOS 编辑器已内嵌控制服务。MCP 默认关闭；启动编辑器后，在“AI 操作隧道”面板中打开 MCP 开关。开关状态会保存在 `~/Library/Application Support/MOX HMI Studio/control-tunnel.toml`，下次启动沿用上次选择。
+
+开启后，面板会显示当前可执行的 Codex 注册命令，例如：
 
 ```bash
 codex mcp add mox-hmi --url http://127.0.0.1:17880/mcp
 ```
 
-先启动 `.app` 再注册或调用；注册后重启 Codex CLI 或开启新会话。若使用 `--token`，在 URL 后追加 `?token=...`。
+点击“复制命令”，在终端执行后新开一个 Codex 会话即可连接。若使用 `--token`，面板生成的 URL 会追加经过编码的 `?token=...`。关闭开关后 `/mcp` 和 `/control` 会立即返回不可用。
 
 以下独立控制服务仅用于纯 Web 开发环境或没有原生壳的部署。
 

@@ -18,12 +18,16 @@ use tokio::{net::TcpListener, sync::mpsc, time::timeout};
 use tower_http::services::{ServeDir, ServeFile};
 
 pub type HapticCallback = Arc<dyn Fn() + Send + Sync>;
+pub type EnabledCallback = Arc<dyn Fn() -> bool + Send + Sync>;
 
 #[derive(Clone)]
 pub struct HttpConfig {
     pub token: Option<String>,
     pub web_dir: Option<PathBuf>,
     pub haptic: Option<HapticCallback>,
+    /// Optional runtime gate for the MCP endpoint and browser control tunnel.
+    /// `None` keeps the standalone control service enabled.
+    pub control_enabled: Option<EnabledCallback>,
 }
 
 #[derive(Clone)]
@@ -31,6 +35,7 @@ struct AppState {
     hub: ControlHub,
     token: Option<String>,
     haptic: Option<HapticCallback>,
+    control_enabled: Option<EnabledCallback>,
     session_id: Arc<str>,
 }
 
@@ -43,6 +48,7 @@ pub async fn serve(
         hub,
         token: config.token,
         haptic: config.haptic,
+        control_enabled: config.control_enabled,
         session_id: Arc::from("mox-hmi-local"),
     };
 
@@ -70,11 +76,14 @@ pub async fn serve(
 }
 
 async fn health(State(state): State<AppState>) -> Json<Value> {
+    let enabled = control_enabled(&state);
     Json(json!({
         "ok": true,
         "service": "mox-hmi-editor",
         "ws": "/control",
         "mcp": "/mcp",
+        "control_enabled": enabled,
+        "mcp_enabled": enabled,
         "haptic": state.haptic.is_some(),
     }))
 }
@@ -87,7 +96,10 @@ async fn haptic_post(State(state): State<AppState>) -> StatusCode {
     StatusCode::NO_CONTENT
 }
 
-async fn mcp_get() -> Response {
+async fn mcp_get(State(state): State<AppState>) -> Response {
+    if !control_enabled(&state) {
+        return control_disabled();
+    }
     (
         StatusCode::METHOD_NOT_ALLOWED,
         Json(json!({
@@ -103,6 +115,9 @@ async fn mcp_post(
     headers: axum::http::HeaderMap,
     body: Bytes,
 ) -> Response {
+    if !control_enabled(&state) {
+        return control_disabled();
+    }
     if !token_matches(&state, &query, &headers) {
         return (
             StatusCode::UNAUTHORIZED,
@@ -152,6 +167,24 @@ async fn mcp_post(
     response
 }
 
+fn control_enabled(state: &AppState) -> bool {
+    state
+        .control_enabled
+        .as_ref()
+        .map(|enabled| enabled())
+        .unwrap_or(true)
+}
+
+fn control_disabled() -> Response {
+    (
+        StatusCode::NOT_FOUND,
+        Json(json!({
+            "error": "MCP 已关闭，请在 MOX HMI“AI 操作隧道”中启用"
+        })),
+    )
+        .into_response()
+}
+
 fn token_matches(
     state: &AppState,
     query: &HashMap<String, String>,
@@ -169,8 +202,12 @@ fn token_matches(
         .is_some_and(|value| value == format!("Bearer {expected}"))
 }
 
-async fn ws_upgrade(ws: WebSocketUpgrade, State(state): State<AppState>) -> impl IntoResponse {
+async fn ws_upgrade(ws: WebSocketUpgrade, State(state): State<AppState>) -> Response {
+    if !control_enabled(&state) {
+        return control_disabled();
+    }
     ws.on_upgrade(move |socket| handle_socket(socket, state))
+        .into_response()
 }
 
 async fn handle_socket(mut socket: WebSocket, state: AppState) {
@@ -241,8 +278,21 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
         return;
     }
 
+    let mut enabled_check = tokio::time::interval(Duration::from_secs(1));
     loop {
         tokio::select! {
+            _ = enabled_check.tick() => {
+                if !control_enabled(&state) {
+                    let _ = send(
+                        &mut socket,
+                        &ServerMessage::Reject {
+                            reason: "MCP 已关闭".to_string(),
+                        },
+                    )
+                    .await;
+                    break;
+                }
+            }
             outbound = outbound_rx.recv() => {
                 let Some(message) = outbound else { break; };
                 if send(&mut socket, &message).await.is_err() {
@@ -297,4 +347,32 @@ async fn reject(mut socket: WebSocket, reason: &str) {
     )
     .await;
     let _ = socket.close().await;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::AtomicBool;
+
+    #[tokio::test]
+    async fn mcp_routes_follow_the_runtime_gate() {
+        let enabled = Arc::new(AtomicBool::new(false));
+        let gate = enabled.clone();
+        let state = AppState {
+            hub: ControlHub::new(None),
+            token: None,
+            haptic: None,
+            control_enabled: Some(Arc::new(move || {
+                gate.load(std::sync::atomic::Ordering::Acquire)
+            })),
+            session_id: Arc::from("test-session"),
+        };
+
+        let disabled = mcp_get(State(state.clone())).await;
+        assert_eq!(disabled.status(), StatusCode::NOT_FOUND);
+
+        enabled.store(true, std::sync::atomic::Ordering::Release);
+        let enabled = mcp_get(State(state)).await;
+        assert_eq!(enabled.status(), StatusCode::METHOD_NOT_ALLOWED);
+    }
 }

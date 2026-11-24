@@ -136,7 +136,7 @@ fn run_editor(mut forwarded: Vec<String>) -> Result<(), String> {
     let editor = build_editor(debug)?;
     println!("启动 MOX HMI Studio 原生编辑器（Dioxus Native + Bevy）");
     println!("控制隧道: http://{DEFAULT_ADDR}:{port}/");
-    println!("MCP 端点:   http://{DEFAULT_ADDR}:{port}/mcp");
+    println!("MCP:        默认关闭，在桌面应用“AI 操作隧道”中启用");
     println!("触觉反馈:   POST http://{DEFAULT_ADDR}:{port}/haptic");
 
     let status = Command::new(editor)
