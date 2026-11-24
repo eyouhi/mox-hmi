@@ -109,6 +109,8 @@ enum DragState {
     },
     Pan {
         last_world: Vec2,
+        start_world: Vec2,
+        clear_on_click: bool,
     },
 }
 
@@ -623,6 +625,7 @@ pub fn two_d_input(
             point,
             run_mode,
             editor_modifier_pressed(&keyboard),
+            input::alt_pressed(&keyboard),
             camera_state.zoom,
             &mut edit_state,
         );
@@ -731,23 +734,34 @@ fn update_pan(
     transform: &mut Transform,
     edit_state: &mut TwoDEditState,
 ) -> bool {
-    let pan_requested = (pointer_on_canvas
-        || matches!(edit_state.drag, Some(DragState::Pan { .. })))
+    let continuing_pan = matches!(edit_state.drag, Some(DragState::Pan { .. }));
+    let pan_requested = (pointer_on_canvas || continuing_pan)
         && (mouse_buttons.pressed(MouseButton::Middle)
-            || (mouse_buttons.pressed(MouseButton::Left) && keyboard.pressed(KeyCode::Space)));
+            || (mouse_buttons.pressed(MouseButton::Left)
+                && (keyboard.pressed(KeyCode::Space) || continuing_pan)));
     if !pan_requested {
-        if matches!(edit_state.drag, Some(DragState::Pan { .. })) {
-            edit_state.drag = None;
+        if matches!(edit_state.drag, Some(DragState::Pan { .. }))
+            && let Some(DragState::Pan {
+                last_world,
+                start_world,
+                clear_on_click,
+            }) = edit_state.drag.take()
+            && clear_on_click
+            && (last_world - start_world).length_squared() <= f32::EPSILON
+        {
+            crate::bridge::select_node(None);
         }
         return false;
     }
 
     let current = Vec2::new(point[0], point[1]);
     let last = match edit_state.drag.as_ref() {
-        Some(DragState::Pan { last_world }) => *last_world,
+        Some(DragState::Pan { last_world, .. }) => *last_world,
         _ => {
             edit_state.drag = Some(DragState::Pan {
                 last_world: current,
+                start_world: current,
+                clear_on_click: false,
             });
             current
         }
@@ -757,9 +771,9 @@ fn update_pan(
         let current_world = design_to_world([current.x, current.y], DESIGN_SIZE);
         transform.translation.x -= current_world[0] - previous_world[0];
         transform.translation.y -= current_world[1] - previous_world[1];
-        edit_state.drag = Some(DragState::Pan {
-            last_world: current,
-        });
+        if let Some(DragState::Pan { last_world, .. }) = edit_state.drag.as_mut() {
+            *last_world = current;
+        }
     }
     true
 }
@@ -769,10 +783,22 @@ fn begin_left_press(
     point: [f32; 2],
     run_mode: bool,
     additive: bool,
+    marquee: bool,
     zoom: f32,
     edit_state: &mut TwoDEditState,
 ) {
     let selected = crate::bridge::selected_nodes();
+    if !run_mode && marquee {
+        if !additive {
+            crate::bridge::select_node(None);
+        }
+        edit_state.drag = Some(DragState::Marquee {
+            start: point,
+            current: point,
+            additive,
+        });
+        return;
+    }
     if !run_mode
         && !additive
         && selected.len() == 1
@@ -829,13 +855,10 @@ fn begin_left_press(
         crate::bridge::select_node(None);
         return;
     }
-    if !additive {
-        crate::bridge::select_node(None);
-    }
-    edit_state.drag = Some(DragState::Marquee {
-        start: point,
-        current: point,
-        additive,
+    edit_state.drag = Some(DragState::Pan {
+        last_world: Vec2::new(point[0], point[1]),
+        start_world: Vec2::new(point[0], point[1]),
+        clear_on_click: !additive,
     });
 }
 
@@ -1811,6 +1834,7 @@ pub fn draw_two_d_overlay(
             | Some(DragState::Resize { .. })
             | Some(DragState::PipePoint { .. })
             | Some(DragState::Marquee { .. })
+            | Some(DragState::Pan { .. })
             | Some(DragState::GamepadMove { .. })
     ) && let Ok(window) = window_query.single()
         && let Some(cursor) = window.cursor_position()
@@ -2186,10 +2210,12 @@ pub fn publish_view_state(
 #[cfg(test)]
 mod tests {
     use super::{
-        CenterSnapTargets, drag_activation_reached, fine_nudge_snap, node_local_to_design,
-        normalized_pipe_node, snap_pipe_point, wheel_pan_translation,
+        CenterSnapTargets, DragState, TwoDEditState, drag_activation_reached, fine_nudge_snap,
+        node_local_to_design, normalized_pipe_node, snap_pipe_point, update_pan,
+        wheel_pan_translation,
     };
-    use bevy::prelude::Vec2;
+    use bevy::input::{ButtonInput, mouse::MouseButton};
+    use bevy::prelude::{KeyCode, Transform, Vec2};
     use hmi_core::{CenterSnap, EquipmentKind, HexColor, Rect, UiNode, Widget2D};
 
     fn pipe_node(points: Vec<[f32; 2]>) -> UiNode {
@@ -2250,6 +2276,58 @@ mod tests {
             wheel_pan_translation(Vec2::new(10.0, 5.0), 2.0),
             Vec2::new(-5.0, 2.5)
         );
+    }
+
+    #[test]
+    fn plain_left_pan_continues_until_release() {
+        let mut mouse = ButtonInput::<MouseButton>::default();
+        mouse.press(MouseButton::Left);
+        let keyboard = ButtonInput::<KeyCode>::default();
+        let mut edit_state = TwoDEditState {
+            drag: Some(DragState::Pan {
+                last_world: Vec2::new(10.0, 10.0),
+                start_world: Vec2::new(10.0, 10.0),
+                clear_on_click: true,
+            }),
+            ..TwoDEditState::default()
+        };
+        let mut transform = Transform::default();
+
+        assert!(update_pan(
+            &mouse,
+            &keyboard,
+            false,
+            [20.0, 10.0],
+            &mut transform,
+            &mut edit_state,
+        ));
+        assert!(transform.translation.x < 0.0);
+        assert!(matches!(edit_state.drag, Some(DragState::Pan { .. })));
+    }
+
+    #[test]
+    fn pan_check_preserves_marquee_drag() {
+        let mouse = ButtonInput::<MouseButton>::default();
+        let keyboard = ButtonInput::<KeyCode>::default();
+        let mut edit_state = TwoDEditState {
+            drag: Some(DragState::Marquee {
+                start: [10.0, 10.0],
+                current: [20.0, 20.0],
+                additive: false,
+            }),
+            ..TwoDEditState::default()
+        };
+        let mut transform = Transform::default();
+
+        assert!(!update_pan(
+            &mouse,
+            &keyboard,
+            false,
+            [30.0, 30.0],
+            &mut transform,
+            &mut edit_state,
+        ));
+        assert!(matches!(edit_state.drag, Some(DragState::Marquee { .. })));
     }
 
     #[test]

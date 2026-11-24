@@ -21,7 +21,7 @@ Shortcuts do not run while a text field, textarea, select, or contenteditable el
 
 - Click selects one node.
 - `Shift` or `Cmd/Ctrl` click toggles a node in the current selection.
-- Dragging from empty canvas draws a marquee.
+- `Option/Alt` plus dragging from empty canvas draws a marquee.
 - `Shift` plus marquee adds the intersected nodes to the selection.
 - `Cmd/Ctrl+A` selects all visible nodes.
 - The last selected node is the primary node used by the single-node inspector.
@@ -40,18 +40,19 @@ Shortcuts do not run while a text field, textarea, select, or contenteditable el
 
 ## 2D interaction
 
-- Plain left drag on empty canvas starts marquee selection.
+- Plain left drag on empty canvas pans the canvas.
+- `Option/Alt` plus left drag starts marquee selection, including when the drag begins over a node.
 - Dragging a selected node moves the whole unlocked selection.
 - Group snapping is calculated from the selection bounds center.
 - Selection outlines are drawn for every selected node; corner resize handles remain a single-selection affordance.
 - `Q/E` rotation remains a canvas-only shortcut for a single selected node.
-- Space or middle-button drag pans; pinch or modified wheel zooms.
+- Space or middle-button drag also pans; two-finger scrolling pans and pinch or modified wheel zooms.
 
 ## 3D interaction
 
-- Plain left drag on empty canvas starts a screen-space marquee.
-- `Option/Alt` plus left drag orbits the camera.
-- Dragging a device moves the unlocked selection on the ground plane; dragging from empty space starts a marquee. Dragging an unselected device selects it first.
+- Plain left drag on empty canvas orbits the camera; right drag also orbits.
+- `Option/Alt` plus left drag starts a screen-space marquee.
+- Dragging a device moves the unlocked selection on the ground plane; plain dragging from empty space orbits the camera. Dragging an unselected device selects it first.
 - Device bounds are projected to screen space for marquee hits.
 - Imported GLB child meshes inherit the device picking tag.
 - Selection rings are shown for every selected device.

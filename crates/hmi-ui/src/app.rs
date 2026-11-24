@@ -92,12 +92,12 @@ pub fn App() -> Element {
         if gamepad_connected {
             "左摇杆地面移动 · 右摇杆视角 · 方向键 X/高度 · Options 菜单"
         } else {
-            "拖设备移动 · 空白拖框选 · Option+左拖旋转 · 方向键微调 · Q/E 升降"
+            "拖设备移动 · 空白拖旋转 · Option+拖框选 · 方向键微调 · Q/E 升降"
         }
     } else if gamepad_connected {
-        "左摇杆移动 · 右摇杆平移 · 空白拖框选 · Options 菜单"
+        "左摇杆移动 · 右摇杆平移 · Option+拖框选 · Options 菜单"
     } else {
-        "拖动/框选 · ⇧ 或 ⌘ 点击多选 · ⌘C/V/X · 空格/中键平移 · F 聚焦"
+        "空白拖平移 · Option+拖框选 · ⇧/⌘ 点击多选 · ⌘C/V/X · F 聚焦"
     };
 
     #[cfg(target_arch = "wasm32")]
@@ -239,9 +239,9 @@ pub fn App() -> Element {
                     {canvas_element(screen_loading() || engine_starting)}
                     p { id: "canvas-help", class: "sr-only",
                         if cfg!(target_arch = "wasm32") {
-                            "画布内容由 WebGPU 渲染。点击或 Shift 点击多选，空白处拖动框选；⌘A 全选，⌘C/⌘V/⌘X 复制、粘贴、剪切，⌘D 原地复制，Delete 删除，⌘Z 撤销。2D 方向键轻推，Q/E 旋转，F 聚焦；3D 方向键轻推，Q/E 调整高度，Option 加方向键旋转视角，WASD 平移观察中心，Shift 加速。DualSense 左摇杆移动，右摇杆观察，Options 打开菜单，Create 打开指引。"
+                            "画布内容由 WebGPU 渲染。点击或 Shift 点击多选；2D 空白处拖动平移、Option 加拖动框选，3D 空白处拖动旋转视角、Option 加拖动框选；⌘A 全选，⌘C/⌘V/⌘X 复制、粘贴、剪切，⌘D 原地复制，Delete 删除，⌘Z 撤销。2D 方向键轻推，Q/E 旋转，F 聚焦；3D 方向键轻推，Q/E 调整高度，Option 加方向键旋转视角，WASD 平移观察中心，Shift 加速。DualSense 左摇杆移动，右摇杆观察，Options 打开菜单，Create 打开指引。"
                         } else {
-                            "画布内容由 Bevy wgpu 渲染。点击或 Shift 点击多选，空白处拖动框选；⌘A 全选，⌘C/⌘V/⌘X 复制、粘贴、剪切，⌘D 原地复制，Delete 删除，⌘Z 撤销。2D 方向键轻推，Q/E 旋转，F 聚焦；3D 方向键轻推，Q/E 调整高度，Option 加方向键旋转视角，WASD 平移观察中心，Shift 加速。DualSense 左摇杆移动，右摇杆观察，Options 打开菜单，Create 打开指引。"
+                            "画布内容由 Bevy wgpu 渲染。点击或 Shift 点击多选；2D 空白处拖动平移、Option 加拖动框选，3D 空白处拖动旋转视角、Option 加拖动框选；⌘A 全选，⌘C/⌘V/⌘X 复制、粘贴、剪切，⌘D 原地复制，Delete 删除，⌘Z 撤销。2D 方向键轻推，Q/E 旋转，F 聚焦；3D 方向键轻推，Q/E 调整高度，Option 加方向键旋转视角，WASD 平移观察中心，Shift 加速。DualSense 左摇杆移动，右摇杆观察，Options 打开菜单，Create 打开指引。"
                         }
                     }
                     if screen_loading() || engine_starting {

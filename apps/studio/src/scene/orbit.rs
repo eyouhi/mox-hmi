@@ -1,6 +1,8 @@
 use super::CanvasPinch;
 use super::input::{self, GamepadState, PadButton};
 use super::plugin::{CachedProject, HmiCameras};
+use super::three_d::HoveredThreeD;
+use super::three_d_edit::ThreeDEditState;
 use bevy::input::mouse::MouseScrollUnit;
 use bevy::input::mouse::{AccumulatedMouseMotion, MouseWheel};
 use bevy::prelude::*;
@@ -58,6 +60,8 @@ pub fn orbit_system(
     mouse_buttons: Res<ButtonInput<MouseButton>>,
     mouse_motion: Res<AccumulatedMouseMotion>,
     pad: Res<GamepadState>,
+    hovered: Res<HoveredThreeD>,
+    mut edit_state: ResMut<ThreeDEditState>,
     mut wheel_events: MessageReader<MouseWheel>,
     mut pinch_events: MessageReader<CanvasPinch>,
     mut orbit: ResMut<OrbitCamera>,
@@ -65,6 +69,7 @@ pub fn orbit_system(
     mut reset_revision: Local<u32>,
 ) {
     if !cached.is_three_d() {
+        edit_state.view_orbit = false;
         crate::bridge::set_axis_gizmo_3d(None);
         for event in wheel_events.read() {
             let _ = event;
@@ -73,6 +78,22 @@ pub fn orbit_system(
             let _ = event;
         }
         return;
+    }
+
+    let pointer_on_canvas = window_query
+        .single()
+        .ok()
+        .and_then(|window| window.cursor_position())
+        .is_some_and(input::pointer_over_canvas);
+    if pointer_on_canvas && mouse_buttons.just_pressed(MouseButton::Left) {
+        edit_state.view_orbit = !input::scene_input_enabled()
+            || view_orbit_intent(
+                input::alt_pressed(&keyboard),
+                hovered.0.as_deref().is_some(),
+            );
+    }
+    if !mouse_buttons.pressed(MouseButton::Left) {
+        edit_state.view_orbit = false;
     }
 
     let current_reset = crate::bridge::camera_reset_revision();
@@ -90,17 +111,12 @@ pub fn orbit_system(
     }
 
     let delta = mouse_motion.delta;
-    let pointer_on_canvas = window_query
-        .single()
-        .ok()
-        .and_then(|window| window.cursor_position())
-        .is_some_and(input::pointer_over_canvas);
     apply_orbit_mouse_drag(
         &mut orbit,
         &mouse_buttons,
-        &keyboard,
         pointer_on_canvas,
         delta,
+        edit_state.view_orbit,
     );
 
     if let Ok(mut transform) = camera_query.get_mut(cameras.three_d) {
@@ -204,19 +220,22 @@ fn apply_orbit_gamepad(
 fn apply_orbit_mouse_drag(
     orbit: &mut OrbitCamera,
     mouse_buttons: &ButtonInput<MouseButton>,
-    keyboard: &ButtonInput<KeyCode>,
     pointer_on_canvas: bool,
     delta: Vec2,
+    view_orbit: bool,
 ) {
-    let orbit_modifier = input::alt_pressed(keyboard);
     if pointer_on_canvas
-        && ((mouse_buttons.pressed(MouseButton::Left) && orbit_modifier)
-            || mouse_buttons.pressed(MouseButton::Right))
+        && (mouse_buttons.pressed(MouseButton::Right)
+            || (mouse_buttons.pressed(MouseButton::Left) && view_orbit))
         && delta.length_squared() > 0.0
     {
         orbit.yaw -= delta.x * 0.006;
         orbit.pitch = (orbit.pitch + delta.y * 0.005).clamp(-0.15, 1.25);
     }
+}
+
+fn view_orbit_intent(option_pressed: bool, hovered_device: bool) -> bool {
+    !option_pressed && !hovered_device
 }
 
 fn apply_orbit_middle_pan(
@@ -350,7 +369,8 @@ fn model_span(model: &DeviceModel) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::{
-        OrbitCamera, apply_orbit_pinch_delta, apply_right_stick_orbit, wheel_pan_focus_delta,
+        OrbitCamera, apply_orbit_pinch_delta, apply_right_stick_orbit, view_orbit_intent,
+        wheel_pan_focus_delta,
     };
     use bevy::prelude::{Vec2, Vec3};
 
@@ -393,5 +413,13 @@ mod tests {
         let closer = orbit.distance;
         apply_orbit_pinch_delta(&mut orbit, -0.1);
         assert!(orbit.distance > closer);
+    }
+
+    #[test]
+    fn view_orbit_only_starts_on_empty_canvas_without_option() {
+        assert!(view_orbit_intent(false, false));
+        assert!(!view_orbit_intent(true, false));
+        assert!(!view_orbit_intent(false, true));
+        assert!(!view_orbit_intent(true, true));
     }
 }

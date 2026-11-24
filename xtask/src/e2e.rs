@@ -242,7 +242,10 @@ impl Harness {
         self.marquee_design((295.0, 235.0), (455.0, 355.0), false)?;
         self.wait_text("selection-id", "node.valve_fresh", Duration::from_secs(5))?;
         self.marquee_design((1180.0, 245.0), (1260.0, 355.0), true)?;
-        ensure!(self.selection_count()? == 2, "Shift 框选没有追加第二个节点");
+        ensure!(
+            self.selection_count()? == 2,
+            "Shift + Option 框选没有追加第二个节点"
+        );
         self.wait_visible("multi-inspector", Duration::from_secs(5))?;
 
         let (start_x, start_y) = self.design_to_page(375.0, 300.0)?;
@@ -291,6 +294,20 @@ impl Harness {
         ensure!(self.selection_count()? > 10, "Command+A 没有全选可见节点");
         self.press("Escape")?;
         ensure!(self.selection_count()? == 0, "Escape 没有清空选择");
+
+        self.focus_selector("#bevy-canvas")?;
+        let rect = self.stable_canvas_rect()?;
+        self.drag(
+            (rect.x + 20.0, rect.y + 20.0),
+            (rect.x + rect.width * 0.82, rect.y + rect.height * 0.85),
+            12,
+            None,
+        )?;
+        thread::sleep(Duration::from_millis(250));
+        ensure!(
+            self.selection_count()? == 0,
+            "2D 空白处普通拖拽不应触发框选"
+        );
         Ok(())
     }
 
@@ -306,13 +323,17 @@ impl Harness {
         if std::env::var_os("MOX_E2E_DEBUG").is_some() {
             eprintln!("marquee canvas={rect:?} start={start:?} end={end:?} shift={shift}");
         }
+        self.focus_selector("#bevy-canvas")?;
+        self.set_alt_held(true)?;
         if shift {
-            self.set_shift_held(true)?;
+            self.set_shift_held(true, true)?;
         }
-        let result = self.drag(start, end, 12, shift.then_some(8));
+        let modifiers = 1 | if shift { 8 } else { 0 };
+        let result = self.drag(start, end, 12, Some(modifiers));
         if shift {
-            self.set_shift_held(false)?;
+            self.set_shift_held(false, true)?;
         }
+        self.set_alt_held(false)?;
         if std::env::var_os("MOX_E2E_DEBUG").is_some() && result.is_ok() {
             eprintln!("marquee selection={:?}", self.selection_count());
         }
@@ -340,12 +361,27 @@ impl Harness {
         thread::sleep(Duration::from_millis(1_200));
         let rect = self.canvas_rect()?;
 
-        self.drag(
-            (rect.x + 20.0, rect.y + 20.0),
-            (rect.x + rect.width * 0.82, rect.y + rect.height * 0.85),
-            16,
-            None,
-        )?;
+        let gizmo_before = self.axis_gizmo_x_position()?;
+        let orbit_start = (rect.x + 20.0, rect.y + 20.0);
+        let orbit_end = (rect.x + 110.0, rect.y + 75.0);
+        self.drag(orbit_start, orbit_end, 10, None)?;
+        thread::sleep(Duration::from_millis(300));
+        let gizmo_after = self.axis_gizmo_x_position()?;
+        ensure!(
+            (gizmo_after.0 - gizmo_before.0).abs() + (gizmo_after.1 - gizmo_before.1).abs() > 1.0,
+            "3D 空白处单指拖拽没有旋转视角"
+        );
+
+        self.focus_selector("#bevy-canvas")?;
+        self.press("Home")?;
+        thread::sleep(Duration::from_millis(300));
+
+        let marquee_start = (rect.x + 20.0, rect.y + 20.0);
+        let marquee_end = (rect.x + rect.width * 0.82, rect.y + rect.height * 0.85);
+        self.set_alt_held(true)?;
+        let marquee = self.drag(marquee_start, marquee_end, 16, Some(1));
+        self.set_alt_held(false)?;
+        marquee?;
         thread::sleep(Duration::from_millis(400));
         ensure!(self.selection_count()? >= 2, "3D 框选没有选中设备");
         self.wait_visible("multi-inspector", Duration::from_secs(5))?;
@@ -1232,17 +1268,24 @@ impl Harness {
         self.flush_frame()
     }
 
-    fn set_shift_held(&self, held: bool) -> Result<(), String> {
-        let event = if held { "keydown" } else { "keyup" };
-        ensure!(
-            self.eval_bool(&format!(
-                "(() => {{ const el = document.querySelector('#bevy-canvas'); if (!el) return false; el.dispatchEvent(new KeyboardEvent({}, {{ key: 'Shift', code: 'ShiftLeft', shiftKey: {}, bubbles: true, cancelable: true }})); return true; }})()",
-                json_string(event),
-                held
-            ))?,
-            "无法发送 Shift 状态"
-        );
-        self.flush_frame()
+    fn set_shift_held(&self, held: bool, alt_held: bool) -> Result<(), String> {
+        let modifiers = 8 | if alt_held { 1 } else { 0 };
+        self.press_modifier("Shift", "ShiftLeft", 16, modifiers, held)
+    }
+
+    fn set_alt_held(&self, held: bool) -> Result<(), String> {
+        self.press_modifier("Alt", "AltLeft", 18, 1, held)
+    }
+
+    fn axis_gizmo_x_position(&self) -> Result<(f64, f64), String> {
+        let value = self.eval(
+            "(() => { const el = document.querySelector('.axis-gizmo-label.is-x'); if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.x, y: r.y }; })()",
+        )?;
+        ensure!(!value.is_null(), "3D 坐标方位标识没有布局区域");
+        Ok((
+            value["x"].as_f64().unwrap_or(0.0),
+            value["y"].as_f64().unwrap_or(0.0),
+        ))
     }
 
     fn press_modifier(

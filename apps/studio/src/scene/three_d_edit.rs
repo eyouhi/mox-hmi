@@ -17,6 +17,7 @@ pub struct ThreeDEditState {
     drag: Option<PreviewMove>,
     trackpad: Option<TrackpadDrag>,
     marquee: Option<MarqueeDrag>,
+    pub view_orbit: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -409,7 +410,7 @@ pub fn three_d_trackpad_edit(
     if !mouse_buttons.just_pressed(MouseButton::Left) || !pointer_on_canvas {
         return;
     }
-    if keyboard.pressed(KeyCode::AltLeft) || keyboard.pressed(KeyCode::AltRight) {
+    if state.view_orbit {
         return;
     }
 
@@ -418,6 +419,15 @@ pub fn three_d_trackpad_edit(
         || keyboard.pressed(KeyCode::SuperRight)
         || keyboard.pressed(KeyCode::ControlLeft)
         || keyboard.pressed(KeyCode::ControlRight);
+
+    if input::alt_pressed(&keyboard) {
+        state.marquee = Some(MarqueeDrag {
+            start: cursor,
+            current: cursor,
+            additive,
+        });
+        return;
+    }
 
     if let Some(node_id) = hovered.0.as_deref() {
         if additive {
@@ -463,11 +473,7 @@ pub fn three_d_trackpad_edit(
         return;
     }
 
-    state.marquee = Some(MarqueeDrag {
-        start: cursor,
-        current: cursor,
-        additive,
-    });
+    state.view_orbit = true;
 }
 
 pub fn draw_three_d_marquee(
