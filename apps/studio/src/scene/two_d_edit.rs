@@ -1,15 +1,18 @@
 use super::input::{self, GamepadState, PadButton};
 use super::plugin::{CachedProject, HmiCameras};
-use super::two_d::{DESIGN_SIZE, HmiNodeRoot};
+use super::two_d::{DESIGN_SIZE, HmiNodeRoot, TwoDVisualIndex};
 use bevy::input::mouse::{MouseScrollUnit, MouseWheel};
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 use hmi_core::{
     CenterSnap, EditorCommand, Rect, ResizeCorner, Screen, UiNode, Widget2D, design_to_world,
-    point_in_rotated_rect, point_near_polyline, resize_rect, snap_rect_center, world_to_design,
+    nearest_point_on_rect_boundary, point_in_rotated_rect, point_near_polyline, resize_rect,
+    snap_rect_center, world_to_design,
 };
 
 const CENTER_SNAP_SCREEN_PX: f32 = 8.0;
+const POINT_SNAP_SCREEN_PX: f32 = 10.0;
+const PIPE_HANDLE_SCREEN_PX: f32 = 9.0;
 const DRAG_ACTIVATION_SCREEN_PX: f32 = 3.0;
 const SNAP_FEEDBACK_COOLDOWN_SECS: f64 = 0.07;
 const GAMEPAD_MOVE_SPEED: f32 = 520.0;
@@ -29,6 +32,9 @@ type TwoDCameraQuery<'w, 's> = Query<
 
 type TwoDRootQuery<'w, 's> =
     Query<'w, 's, (Entity, &'static HmiNodeRoot, &'static mut Transform), Without<Camera2d>>;
+
+type TwoDChildTransformQuery<'w, 's> =
+    Query<'w, 's, &'static mut Transform, (Without<HmiNodeRoot>, Without<Camera2d>)>;
 
 #[derive(Resource)]
 pub struct TwoDCameraState {
@@ -68,6 +74,18 @@ enum DragState {
         original: Rect,
         preview: Rect,
     },
+    PipePoint {
+        node_id: String,
+        index: usize,
+        start: [f32; 2],
+        original: Box<UiNode>,
+        preview: Box<UiNode>,
+        activated: bool,
+        snap: PointSnap,
+        last_snap: PointSnapKey,
+        last_feedback_s: f64,
+        targets: CenterSnapTargets,
+    },
     GamepadMove {
         screen_id: String,
         originals: Vec<(String, Rect)>,
@@ -87,6 +105,22 @@ enum DragState {
         last_world: Vec2,
     },
 }
+
+#[derive(Debug, Clone, PartialEq)]
+struct PointSnap {
+    point: [f32; 2],
+    x: Option<f32>,
+    y: Option<f32>,
+    device_id: Option<String>,
+}
+
+impl PointSnap {
+    fn key(&self) -> PointSnapKey {
+        (self.x, self.y, self.device_id.clone())
+    }
+}
+
+type PointSnapKey = (Option<f32>, Option<f32>, Option<String>);
 
 #[derive(Debug, Clone, Default)]
 struct CenterSnapTargets {
@@ -293,6 +327,180 @@ fn rotated_corners(rect: Rect, rotation_deg: f32) -> [[f32; 2]; 4] {
     })
 }
 
+fn node_local_to_design(node: &UiNode, local: [f32; 2]) -> [f32; 2] {
+    let center = [
+        node.rect.x + node.rect.width * 0.5,
+        node.rect.y + node.rect.height * 0.5,
+    ];
+    let offset = [
+        local[0] - node.rect.width * 0.5,
+        local[1] - node.rect.height * 0.5,
+    ];
+    let angle = node.rotation_deg.to_radians();
+    let (sin, cos) = angle.sin_cos();
+    [
+        center[0] + offset[0] * cos - offset[1] * sin,
+        center[1] + offset[0] * sin + offset[1] * cos,
+    ]
+}
+
+fn design_to_node_local(node: &UiNode, point: [f32; 2]) -> [f32; 2] {
+    design_to_rect_local(node.rect, node.rotation_deg, point)
+}
+
+fn design_to_rect_local(rect: Rect, rotation_deg: f32, point: [f32; 2]) -> [f32; 2] {
+    let center = [rect.x + rect.width * 0.5, rect.y + rect.height * 0.5];
+    let offset = [point[0] - center[0], point[1] - center[1]];
+    let angle = -rotation_deg.to_radians();
+    let (sin, cos) = angle.sin_cos();
+    let local = [
+        offset[0] * cos - offset[1] * sin,
+        offset[0] * sin + offset[1] * cos,
+    ];
+    [local[0] + rect.width * 0.5, local[1] + rect.height * 0.5]
+}
+
+fn pipe_points(node: &UiNode) -> Option<&[[f32; 2]]> {
+    match &node.widget {
+        Widget2D::Pipe { points, .. } => Some(points),
+        _ => None,
+    }
+}
+
+fn pipe_handle_at(node: &UiNode, point: [f32; 2], radius: f32) -> Option<usize> {
+    let points = pipe_points(node)?;
+    points
+        .iter()
+        .enumerate()
+        .filter_map(|(index, local)| {
+            let position = node_local_to_design(node, *local);
+            let distance = (point[0] - position[0]).hypot(point[1] - position[1]);
+            (distance <= radius).then_some((index, distance))
+        })
+        .min_by(|left, right| left.1.total_cmp(&right.1))
+        .map(|(index, _)| index)
+}
+
+fn nearest_axis(value: f32, targets: &[f32], tolerance: f32) -> Option<f32> {
+    targets
+        .iter()
+        .copied()
+        .filter(|target| target.is_finite())
+        .filter_map(|target| {
+            let distance = (target - value).abs();
+            (distance <= tolerance).then_some((distance, target))
+        })
+        .min_by(|left, right| left.0.total_cmp(&right.0))
+        .map(|(_, target)| target)
+}
+
+fn snap_pipe_point(
+    node: &UiNode,
+    _index: usize,
+    raw: [f32; 2],
+    is_endpoint: bool,
+    nodes: &[UiNode],
+    targets: &CenterSnapTargets,
+    tolerance: f32,
+) -> PointSnap {
+    let raw = [
+        raw[0].clamp(0.0, DESIGN_SIZE[0] as f32),
+        raw[1].clamp(0.0, DESIGN_SIZE[1] as f32),
+    ];
+    if is_endpoint {
+        let mut best: Option<(f32, [f32; 2], String)> = None;
+        for device in nodes.iter().filter(|candidate| {
+            candidate.visible
+                && candidate.id != node.id
+                && matches!(candidate.widget, Widget2D::EquipmentSymbol { .. })
+        }) {
+            let Some(boundary) =
+                nearest_point_on_rect_boundary(raw, device.rect, device.rotation_deg)
+            else {
+                continue;
+            };
+            let distance = (raw[0] - boundary[0]).hypot(raw[1] - boundary[1]);
+            let inside = point_in_rotated_rect(raw, device.rect, device.rotation_deg);
+            if (inside || distance <= tolerance)
+                && best
+                    .as_ref()
+                    .is_none_or(|(current, _, _)| distance < *current)
+            {
+                best = Some((distance, boundary, device.id.clone()));
+            }
+        }
+        if let Some((_, point, device_id)) = best {
+            return PointSnap {
+                point,
+                x: None,
+                y: None,
+                device_id: Some(device_id),
+            };
+        }
+    }
+
+    let x = nearest_axis(raw[0], &targets.x, tolerance);
+    let y = nearest_axis(raw[1], &targets.y, tolerance);
+    PointSnap {
+        point: [x.unwrap_or(raw[0]), y.unwrap_or(raw[1])],
+        x,
+        y,
+        device_id: None,
+    }
+}
+
+fn normalized_pipe_node(mut node: UiNode) -> UiNode {
+    let original = node.clone();
+    let Widget2D::Pipe {
+        points, thickness, ..
+    } = &original.widget
+    else {
+        return node;
+    };
+    if points.is_empty() {
+        return node;
+    }
+    let pad = (*thickness * 0.5).max(1.0);
+    let min_x = points
+        .iter()
+        .map(|point| point[0])
+        .fold(f32::INFINITY, f32::min);
+    let max_x = points
+        .iter()
+        .map(|point| point[0])
+        .fold(f32::NEG_INFINITY, f32::max);
+    let min_y = points
+        .iter()
+        .map(|point| point[1])
+        .fold(f32::INFINITY, f32::min);
+    let max_y = points
+        .iter()
+        .map(|point| point[1])
+        .fold(f32::NEG_INFINITY, f32::max);
+    let offset = [node.rect.x + min_x - pad, node.rect.y + min_y - pad];
+    let rect = Rect {
+        x: offset[0],
+        y: offset[1],
+        width: (max_x - min_x + pad * 2.0).max(1.0),
+        height: (max_y - min_y + pad * 2.0).max(1.0),
+    };
+    let points = points
+        .iter()
+        .map(|point| {
+            let design = node_local_to_design(&original, *point);
+            design_to_rect_local(rect, original.rotation_deg, design)
+        })
+        .collect();
+    node.rect = rect;
+    if let Widget2D::Pipe {
+        points: current, ..
+    } = &mut node.widget
+    {
+        *current = points;
+    }
+    node
+}
+
 fn resize_corner_at(
     rect: Rect,
     rotation_deg: f32,
@@ -328,7 +536,7 @@ pub fn hit_test_2d_node(node: &UiNode, point: [f32; 2], zoom: f32) -> bool {
         Widget2D::Pipe {
             points, thickness, ..
         } => {
-            let local = [point[0] - node.rect.x, point[1] - node.rect.y];
+            let local = design_to_node_local(node, point);
             point_near_polyline(local, points, (thickness * 0.5).max(8.0 / zoom))
         }
         _ => point_in_rotated_rect(point, node.rect, node.rotation_deg),
@@ -348,6 +556,7 @@ fn hit_node(nodes: &[UiNode], point: [f32; 2], zoom: f32) -> Option<&UiNode> {
 pub fn two_d_input(
     cached: Res<CachedProject>,
     cameras: Res<HmiCameras>,
+    visual_index: Res<TwoDVisualIndex>,
     time: Res<Time>,
     window_query: Query<&Window, With<PrimaryWindow>>,
     mouse_buttons: Res<ButtonInput<MouseButton>>,
@@ -356,6 +565,7 @@ pub fn two_d_input(
     mut wheel_events: MessageReader<MouseWheel>,
     mut camera_query: TwoDCameraQuery<'_, '_>,
     mut root_query: TwoDRootQuery<'_, '_>,
+    mut child_transforms: TwoDChildTransformQuery<'_, '_>,
     mut edit_state: ResMut<TwoDEditState>,
     mut camera_state: ResMut<TwoDCameraState>,
 ) {
@@ -410,16 +620,21 @@ pub fn two_d_input(
         edit_state.drag,
         Some(DragState::Move { .. })
             | Some(DragState::Resize { .. })
+            | Some(DragState::PipePoint { .. })
             | Some(DragState::Marquee { .. })
     );
     if (pointer_on_canvas || continuing_drag)
         && mouse_buttons.pressed(MouseButton::Left)
         && !update_active_drag(
+            nodes,
             &mut edit_state,
             &mut root_query,
             point,
             time.elapsed_secs_f64(),
             camera_state.zoom,
+            input::shift_pressed(&keyboard),
+            &visual_index,
+            &mut child_transforms,
         )
     {
         return;
@@ -539,21 +754,46 @@ fn begin_left_press(
         && selected.len() == 1
         && let Some(selected_node) = nodes.iter().find(|node| node.id == selected[0])
         && !selected_node.locked
-        && let Some(corner) = resize_corner_at(
+    {
+        if matches!(selected_node.widget, Widget2D::Pipe { .. }) {
+            if let Some(index) = pipe_handle_at(selected_node, point, PIPE_HANDLE_SCREEN_PX / zoom)
+            {
+                let targets = CenterSnapTargets::for_nodes(nodes, &selected);
+                super::snap_feedback::prime();
+                edit_state.drag = Some(DragState::PipePoint {
+                    node_id: selected_node.id.clone(),
+                    index,
+                    start: point,
+                    original: Box::new(selected_node.clone()),
+                    preview: Box::new(selected_node.clone()),
+                    activated: false,
+                    snap: PointSnap {
+                        point,
+                        x: None,
+                        y: None,
+                        device_id: None,
+                    },
+                    last_snap: (None, None, None),
+                    last_feedback_s: f64::NEG_INFINITY,
+                    targets,
+                });
+                return;
+            }
+        } else if let Some(corner) = resize_corner_at(
             selected_node.rect,
             selected_node.rotation_deg,
             point,
             12.0 / zoom,
-        )
-    {
-        edit_state.drag = Some(DragState::Resize {
-            node_id: selected_node.id.clone(),
-            corner,
-            start: point,
-            original: selected_node.rect,
-            preview: selected_node.rect,
-        });
-        return;
+        ) {
+            edit_state.drag = Some(DragState::Resize {
+                node_id: selected_node.id.clone(),
+                corner,
+                start: point,
+                original: selected_node.rect,
+                preview: selected_node.rect,
+            });
+            return;
+        }
     }
 
     if let Some(node) = hit_node(nodes, point, zoom) {
@@ -630,12 +870,17 @@ fn handle_node_press(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn update_active_drag(
+    nodes: &[UiNode],
     edit_state: &mut TwoDEditState,
     root_query: &mut TwoDRootQuery<'_, '_>,
     point: [f32; 2],
     now: f64,
     zoom: f32,
+    axis_lock: bool,
+    visual_index: &TwoDVisualIndex,
+    child_transforms: &mut TwoDChildTransformQuery<'_, '_>,
 ) -> bool {
     match edit_state.drag.as_mut() {
         Some(DragState::Move {
@@ -675,6 +920,65 @@ fn update_active_drag(
                 [point[0] - start[0], point[1] - start[1]],
                 8.0,
             );
+            true
+        }
+        Some(DragState::PipePoint {
+            index,
+            start,
+            original,
+            preview,
+            activated,
+            snap,
+            last_snap,
+            last_feedback_s,
+            targets,
+            ..
+        }) => {
+            let mut delta = [point[0] - start[0], point[1] - start[1]];
+            if !*activated {
+                if !drag_activation_reached(delta, zoom) {
+                    return false;
+                }
+                *activated = true;
+            }
+            if axis_lock {
+                if delta[0].abs() >= delta[1].abs() {
+                    delta[1] = 0.0;
+                } else {
+                    delta[0] = 0.0;
+                }
+            }
+            let original_points = pipe_points(original).unwrap_or_default();
+            let Some(original_point) = original_points.get(*index).copied() else {
+                return true;
+            };
+            let handle = node_local_to_design(original, original_point);
+            let raw = [handle[0] + delta[0], handle[1] + delta[1]];
+            let is_endpoint = *index == 0 || *index + 1 == original_points.len();
+            *snap = snap_pipe_point(
+                original,
+                *index,
+                raw,
+                is_endpoint,
+                nodes,
+                targets,
+                POINT_SNAP_SCREEN_PX / zoom.max(f32::EPSILON),
+            );
+            if let Widget2D::Pipe { points, .. } = &mut preview.widget
+                && let Some(target) = points.get_mut(*index)
+            {
+                *target = design_to_node_local(original, snap.point);
+            }
+            let key = snap.key();
+            if key != *last_snap
+                && (key.0.is_some() || key.1.is_some() || key.2.is_some())
+                && now - *last_feedback_s >= SNAP_FEEDBACK_COOLDOWN_SECS
+            {
+                super::snap_feedback::trigger();
+                *last_feedback_s = now;
+            }
+            *last_snap = key;
+            apply_pipe_preview(root_query, child_transforms, visual_index, preview);
             true
         }
         Some(DragState::Marquee { current, .. }) => {
@@ -743,6 +1047,14 @@ fn finish_left_release(cached: &CachedProject, nodes: &[UiNode], edit_state: &mu
             ..
         }) if preview != original => {
             commit_rect(cached, &node_id, preview);
+        }
+        Some(DragState::PipePoint {
+            node_id: _,
+            original,
+            preview,
+            ..
+        }) if preview.widget != original.widget => {
+            commit_node(cached, normalized_pipe_node(*preview));
         }
         Some(drag @ DragState::GamepadMove { .. }) => {
             edit_state.drag = Some(drag);
@@ -1139,6 +1451,62 @@ fn apply_rect_preview(root_query: &mut TwoDRootQuery<'_, '_>, node_id: &str, rec
     }
 }
 
+fn apply_pipe_preview(
+    root_query: &mut TwoDRootQuery<'_, '_>,
+    child_transforms: &mut TwoDChildTransformQuery<'_, '_>,
+    visual_index: &TwoDVisualIndex,
+    node: &UiNode,
+) {
+    let Widget2D::Pipe { points, .. } = &node.widget else {
+        return;
+    };
+    if let Some((_, _, mut root_transform)) = root_query
+        .iter_mut()
+        .find(|(_, root, _)| root.node_id == node.id)
+    {
+        let center = [
+            node.rect.x + node.rect.width * 0.5,
+            node.rect.y + node.rect.height * 0.5,
+        ];
+        let world = design_to_world(center, DESIGN_SIZE);
+        root_transform.translation.x = world[0];
+        root_transform.translation.y = world[1];
+        root_transform.rotation = Quat::from_rotation_z(-node.rotation_deg.to_radians());
+    }
+    let Some(pipe) = visual_index
+        .nodes
+        .get(&node.id)
+        .and_then(|visual| visual.pipe.as_ref())
+    else {
+        return;
+    };
+    for (segment_visual, segment) in pipe.segments.iter().zip(points.windows(2)) {
+        let Ok(mut transform) = child_transforms.get_mut(segment_visual.entity) else {
+            continue;
+        };
+        let start = local_design_to_world(segment[0], node.rect.width, node.rect.height);
+        let end = local_design_to_world(segment[1], node.rect.width, node.rect.height);
+        let delta = end - start;
+        let length = delta.length();
+        transform.translation = Vec3::new((start.x + end.x) * 0.5, (start.y + end.y) * 0.5, 0.15);
+        transform.rotation = Quat::from_rotation_z(delta.y.atan2(delta.x));
+        let scale = (length / segment_visual.base_length).max(0.001);
+        transform.scale = Vec3::new(scale, 1.0, 1.0);
+    }
+    for (entity, point) in pipe.joints.iter().zip(points) {
+        let Ok(mut transform) = child_transforms.get_mut(*entity) else {
+            continue;
+        };
+        let local = local_design_to_world(*point, node.rect.width, node.rect.height);
+        transform.translation.x = local.x;
+        transform.translation.y = local.y;
+    }
+}
+
+fn local_design_to_world(point: [f32; 2], width: f32, height: f32) -> Vec2 {
+    Vec2::new(point[0] - width * 0.5, height * 0.5 - point[1])
+}
+
 fn gamepad_edit_2d(
     cached: &CachedProject,
     nodes: &[UiNode],
@@ -1305,6 +1673,27 @@ fn commit_rect(cached: &CachedProject, node_id: &str, rect: Rect) {
     commit_rects(cached, &[(node_id.to_string(), rect)]);
 }
 
+fn commit_node(cached: &CachedProject, node: UiNode) {
+    let Some(screen_id) = cached.screen_id.clone() else {
+        return;
+    };
+    let Some(project) = cached.project.as_ref() else {
+        return;
+    };
+    let Some(Screen::TwoD { nodes, .. }) = project.screen(&screen_id) else {
+        return;
+    };
+    let Some(current) = nodes.iter().find(|current| current.id == node.id) else {
+        return;
+    };
+    if *current == node {
+        return;
+    }
+    if let Err(error) = crate::bridge::execute(EditorCommand::Update2dNode { screen_id, node }) {
+        crate::bridge::set_notice(crate::bridge::NoticeLevel::Error, error.to_string());
+    }
+}
+
 fn commit_rects(cached: &CachedProject, rects: &[(String, Rect)]) {
     let Some(screen_id) = cached.screen_id.as_ref() else {
         return;
@@ -1361,6 +1750,7 @@ pub fn draw_two_d_overlay(
         edit_state.drag,
         Some(DragState::Move { .. })
             | Some(DragState::Resize { .. })
+            | Some(DragState::PipePoint { .. })
             | Some(DragState::Marquee { .. })
             | Some(DragState::GamepadMove { .. })
     ) && let Ok(window) = window_query.single()
@@ -1392,12 +1782,14 @@ pub fn draw_two_d_overlay(
         &previews,
         preview_bounds,
         camera_state.zoom,
+        &edit_state,
     );
 
     let snap = active_center_snap(&edit_state, time.elapsed_secs_f64(), preview_bounds);
     if let Some(snap) = snap {
         draw_center_snap(&mut gizmos, snap, selection_center, camera_state.zoom);
     }
+    draw_pipe_snap(&mut gizmos, &edit_state, nodes, camera_state.zoom);
     draw_marquee(&mut gizmos, edit_state.drag.as_ref());
 }
 
@@ -1459,8 +1851,14 @@ fn draw_selection(
     previews: &[(String, Rect)],
     preview_bounds: Option<Rect>,
     zoom: f32,
+    edit_state: &TwoDEditState,
 ) {
     for node in selected_nodes {
+        if pipe_points(node).is_some() {
+            let preview = pipe_preview_node(edit_state, node).unwrap_or_else(|| (*node).clone());
+            draw_pipe_selection(gizmos, &preview, zoom);
+            continue;
+        }
         let rect = previews
             .iter()
             .find(|(id, _)| id == &node.id)
@@ -1484,6 +1882,9 @@ fn draw_selection(
     }
     if selected_nodes.len() == 1 {
         let node = selected_nodes[0];
+        if pipe_points(node).is_some() {
+            return;
+        }
         let rect = previews
             .iter()
             .find(|(id, _)| id == &node.id)
@@ -1532,6 +1933,99 @@ fn active_center_snap(
                 y: edit_state.keyboard_snap.1,
             }),
         _ => None,
+    }
+}
+
+fn pipe_preview_node(edit_state: &TwoDEditState, node: &UiNode) -> Option<UiNode> {
+    match &edit_state.drag {
+        Some(DragState::PipePoint {
+            node_id, preview, ..
+        }) if node_id == &node.id => Some((**preview).clone()),
+        _ => None,
+    }
+}
+
+fn draw_pipe_selection(gizmos: &mut Gizmos, node: &UiNode, zoom: f32) {
+    let Some(points) = pipe_points(node) else {
+        return;
+    };
+    let color = Color::srgb(0.36, 0.95, 0.88);
+    let world_points = points
+        .iter()
+        .map(|point| {
+            let design = node_local_to_design(node, *point);
+            design_to_world(design, DESIGN_SIZE)
+        })
+        .collect::<Vec<_>>();
+    for segment in world_points.windows(2) {
+        gizmos.line_2d(
+            Vec2::new(segment[0][0], segment[0][1]),
+            Vec2::new(segment[1][0], segment[1][1]),
+            Color::srgba(0.36, 0.95, 0.88, 0.45),
+        );
+    }
+    for (index, point) in world_points.iter().enumerate() {
+        let endpoint = index == 0 || index + 1 == world_points.len();
+        gizmos.circle_2d(
+            Vec2::new(point[0], point[1]),
+            (if endpoint { 7.0 } else { 5.5 }) / zoom.max(f32::EPSILON),
+            color,
+        );
+    }
+}
+
+fn draw_pipe_snap(gizmos: &mut Gizmos, edit_state: &TwoDEditState, nodes: &[UiNode], zoom: f32) {
+    let Some(DragState::PipePoint { snap, .. }) = &edit_state.drag else {
+        return;
+    };
+    let guide = Color::srgba(0.95, 0.72, 0.29, 0.92);
+    if let Some(x) = snap.x {
+        let top = design_to_world([x, 0.0], DESIGN_SIZE);
+        let bottom = design_to_world([x, DESIGN_SIZE[1] as f32], DESIGN_SIZE);
+        gizmos.line_2d(
+            Vec2::new(top[0], top[1]),
+            Vec2::new(bottom[0], bottom[1]),
+            guide,
+        );
+    }
+    if let Some(y) = snap.y {
+        let left = design_to_world([0.0, y], DESIGN_SIZE);
+        let right = design_to_world([DESIGN_SIZE[0] as f32, y], DESIGN_SIZE);
+        gizmos.line_2d(
+            Vec2::new(left[0], left[1]),
+            Vec2::new(right[0], right[1]),
+            guide,
+        );
+    }
+    if snap.x.is_some() || snap.y.is_some() || snap.device_id.is_some() {
+        let point = design_to_world(snap.point, DESIGN_SIZE);
+        gizmos.circle_2d(
+            Vec2::new(point[0], point[1]),
+            9.0 / zoom.max(f32::EPSILON),
+            guide,
+        );
+    }
+    if let Some(device_id) = snap.device_id.as_deref()
+        && let Some(device) = nodes.iter().find(|node| node.id == device_id)
+    {
+        let center = design_to_world(
+            [
+                device.rect.x + device.rect.width * 0.5,
+                device.rect.y + device.rect.height * 0.5,
+            ],
+            DESIGN_SIZE,
+        );
+        gizmos.rect_2d(
+            Isometry2d::new(
+                Vec2::new(center[0], center[1]),
+                Rot2::radians(-device.rotation_deg.to_radians()),
+            ),
+            Vec2::new(
+                device.rect.width + 8.0 / zoom,
+                device.rect.height + 8.0 / zoom,
+            ),
+            guide,
+        );
     }
 }
 
@@ -1629,9 +2123,52 @@ pub fn publish_view_state(
 
 #[cfg(test)]
 mod tests {
-    use super::{drag_activation_reached, fine_nudge_snap, wheel_pan_translation};
+    use super::{
+        CenterSnapTargets, drag_activation_reached, fine_nudge_snap, node_local_to_design,
+        normalized_pipe_node, snap_pipe_point, wheel_pan_translation,
+    };
     use bevy::prelude::Vec2;
-    use hmi_core::{CenterSnap, Rect};
+    use hmi_core::{CenterSnap, EquipmentKind, HexColor, Rect, UiNode, Widget2D};
+
+    fn pipe_node(points: Vec<[f32; 2]>) -> UiNode {
+        UiNode {
+            id: "pipe".to_string(),
+            name: "Pipe".to_string(),
+            rect: Rect {
+                x: 100.0,
+                y: 100.0,
+                width: 200.0,
+                height: 80.0,
+            },
+            rotation_deg: 0.0,
+            z: 2,
+            visible: true,
+            locked: false,
+            widget: Widget2D::Pipe {
+                points,
+                thickness: 8.0,
+                color: HexColor("#2d6d77".to_string()),
+            },
+            bindings: Vec::new(),
+        }
+    }
+
+    fn equipment(id: &str, rect: Rect) -> UiNode {
+        UiNode {
+            id: id.to_string(),
+            name: "Equipment".to_string(),
+            rect,
+            rotation_deg: 0.0,
+            z: 1,
+            visible: true,
+            locked: false,
+            widget: Widget2D::EquipmentSymbol {
+                equipment: EquipmentKind::Fan,
+                label: "Fan".to_string(),
+            },
+            bindings: Vec::new(),
+        }
+    }
 
     #[test]
     fn drag_activation_ignores_press_jitter() {
@@ -1723,5 +2260,63 @@ mod tests {
         );
         assert_eq!(returning.x, Some(800.0));
         assert_eq!(returning.rect.x, 670.0);
+    }
+
+    #[test]
+    fn normalized_pipe_keeps_every_design_point_in_place() {
+        let mut original = pipe_node(vec![[10.0, 20.0], [180.0, 20.0], [180.0, 60.0]]);
+        original.rotation_deg = 37.0;
+        if let Widget2D::Pipe { points, .. } = &mut original.widget {
+            points[0] = [-40.0, -25.0];
+        }
+        let expected = match &original.widget {
+            Widget2D::Pipe { points, .. } => points
+                .iter()
+                .map(|point| node_local_to_design(&original, *point))
+                .collect::<Vec<_>>(),
+            _ => unreachable!(),
+        };
+        let normalized = normalized_pipe_node(original);
+        let actual = match &normalized.widget {
+            Widget2D::Pipe { points, .. } => points
+                .iter()
+                .map(|point| node_local_to_design(&normalized, *point))
+                .collect::<Vec<_>>(),
+            _ => unreachable!(),
+        };
+        for (expected, actual) in expected.iter().zip(actual) {
+            assert!((expected[0] - actual[0]).abs() < 0.001);
+            assert!((expected[1] - actual[1]).abs() < 0.001);
+        }
+    }
+
+    #[test]
+    fn pipe_endpoint_snaps_to_nearest_equipment_edge() {
+        let pipe = pipe_node(vec![[0.0, 20.0], [180.0, 20.0]]);
+        let device = equipment(
+            "fan",
+            Rect {
+                x: 320.0,
+                y: 180.0,
+                width: 100.0,
+                height: 80.0,
+            },
+        );
+        let nodes = [pipe.clone(), device];
+        let targets = CenterSnapTargets::for_nodes(&nodes, std::slice::from_ref(&pipe.id));
+        let snapped = snap_pipe_point(&pipe, 1, [316.0, 220.0], true, &nodes, &targets, 10.0);
+        assert_eq!(snapped.device_id.as_deref(), Some("fan"));
+        assert_eq!(snapped.point, [320.0, 220.0]);
+    }
+
+    #[test]
+    fn pipe_point_snaps_to_center_line() {
+        let pipe = pipe_node(vec![[0.0, 20.0], [100.0, 40.0], [180.0, 20.0]]);
+        let nodes = [pipe.clone()];
+        let targets = CenterSnapTargets::for_nodes(&nodes, std::slice::from_ref(&pipe.id));
+        let snapped = snap_pipe_point(&pipe, 1, [794.0, 350.0], false, &nodes, &targets, 10.0);
+        assert_eq!(snapped.point[0], 800.0);
+        assert_eq!(snapped.x, Some(800.0));
+        assert_eq!(snapped.y, None);
     }
 }

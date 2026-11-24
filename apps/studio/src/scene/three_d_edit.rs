@@ -9,6 +9,8 @@ const NUDGE_STEP: f32 = 0.1;
 const NUDGE_STEP_LARGE: f32 = 1.0;
 const STICK_SPEED: f32 = 2.4;
 const MARQUEE_DRAG_THRESHOLD: f32 = 6.0;
+const CENTER_PLANE_SNAP: f32 = 0.18;
+const SNAP_FEEDBACK_COOLDOWN_SECS: f64 = 0.07;
 
 #[derive(Resource, Default)]
 pub struct ThreeDEditState {
@@ -53,6 +55,26 @@ impl PreviewMove {
         }
     }
 
+    fn snap_ground_center(&mut self) -> CenterPlaneSnap {
+        if self.previews.is_empty() {
+            return CenterPlaneSnap::default();
+        }
+        let center = self.previews.iter().map(device_visual_center).sum::<Vec3>()
+            / self.previews.len() as f32;
+        let mut snap = CenterPlaneSnap::default();
+        let mut shift = Vec3::ZERO;
+        if center.x.abs() <= CENTER_PLANE_SNAP {
+            shift.x = -center.x;
+            snap.x = true;
+        }
+        if center.z.abs() <= CENTER_PLANE_SNAP {
+            shift.z = -center.z;
+            snap.z = true;
+        }
+        self.translate_preview(shift);
+        snap
+    }
+
     fn changed(&self) -> bool {
         self.originals
             .iter()
@@ -66,6 +88,21 @@ struct TrackpadDrag {
     preview: PreviewMove,
     start_ground: Vec3,
     plane_y: f32,
+    snap: CenterPlaneSnap,
+    last_snap: CenterPlaneSnap,
+    last_feedback_s: f64,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct CenterPlaneSnap {
+    x: bool,
+    z: bool,
+}
+
+impl CenterPlaneSnap {
+    fn any(self) -> bool {
+        self.x || self.z
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -268,6 +305,7 @@ pub fn three_d_trackpad_edit(
     cached: Res<CachedProject>,
     cameras: Res<HmiCameras>,
     hovered: Res<HoveredThreeD>,
+    time: Res<Time>,
     window_query: Query<&Window, With<PrimaryWindow>>,
     mouse_buttons: Res<ButtonInput<MouseButton>>,
     keyboard: Res<ButtonInput<KeyCode>>,
@@ -341,9 +379,27 @@ pub fn three_d_trackpad_edit(
         let Some(ground) = ground_point(camera, camera_transform, cursor, drag.plane_y) else {
             return;
         };
-        let delta = ground - drag.start_ground;
+        let mut delta = ground - drag.start_ground;
+        if input::shift_pressed(&keyboard) {
+            if delta.x.abs() >= delta.z.abs() {
+                delta.z = 0.0;
+            } else {
+                delta.x = 0.0;
+            }
+        }
         let mut preview = drag.preview.clone();
         preview.translate(Vec3::new(delta.x, 0.0, delta.z));
+        let snap = preview.snap_ground_center();
+        let now = time.elapsed_secs_f64();
+        if snap.any()
+            && snap != drag.last_snap
+            && now - drag.last_feedback_s >= SNAP_FEEDBACK_COOLDOWN_SECS
+        {
+            super::snap_feedback::trigger();
+            drag.last_feedback_s = now;
+        }
+        drag.last_snap = snap;
+        drag.snap = snap;
         drag.preview = preview.clone();
         apply_preview_set(&visual_index, &mut transforms, &preview.previews);
         return;
@@ -395,10 +451,14 @@ pub fn three_d_trackpad_edit(
         };
         commit_preview(state.drag.as_ref());
         state.drag = None;
+        super::snap_feedback::prime();
         state.trackpad = PreviewMove::new(screen_id, &unlocked).map(|preview| TrackpadDrag {
             preview,
             start_ground: ground,
             plane_y,
+            snap: CenterPlaneSnap::default(),
+            last_snap: CenterPlaneSnap::default(),
+            last_feedback_s: f64::NEG_INFINITY,
         });
         return;
     }
@@ -473,6 +533,63 @@ pub fn draw_three_d_hover(
     }
 }
 
+pub fn draw_three_d_alignment(
+    cached: Res<CachedProject>,
+    state: Res<ThreeDEditState>,
+    mut gizmos: Gizmos,
+) {
+    if !cached.is_three_d() || crate::bridge::WORKSPACE_MODE() == crate::bridge::WorkspaceMode::Run
+    {
+        return;
+    }
+    let center_line = Color::srgba(0.35, 0.88, 0.98, 0.22);
+    gizmos.line(
+        Vec3::new(-8.0, 0.02, 0.0),
+        Vec3::new(8.0, 0.02, 0.0),
+        center_line,
+    );
+    gizmos.line(
+        Vec3::new(0.0, 0.02, -8.0),
+        Vec3::new(0.0, 0.02, 8.0),
+        center_line,
+    );
+
+    let Some(drag) = state.trackpad.as_ref() else {
+        return;
+    };
+    let guide = Color::srgba(0.95, 0.72, 0.29, 0.95);
+    if drag.snap.x {
+        draw_plane(
+            &mut gizmos,
+            [
+                Vec3::new(0.0, 0.0, -8.0),
+                Vec3::new(0.0, 0.0, 8.0),
+                Vec3::new(0.0, 4.0, 8.0),
+                Vec3::new(0.0, 4.0, -8.0),
+            ],
+            guide,
+        );
+    }
+    if drag.snap.z {
+        draw_plane(
+            &mut gizmos,
+            [
+                Vec3::new(-8.0, 0.0, 0.0),
+                Vec3::new(8.0, 0.0, 0.0),
+                Vec3::new(8.0, 4.0, 0.0),
+                Vec3::new(-8.0, 4.0, 0.0),
+            ],
+            guide,
+        );
+    }
+}
+
+fn draw_plane(gizmos: &mut Gizmos, corners: [Vec3; 4], color: Color) {
+    for index in 0..corners.len() {
+        gizmos.line(corners[index], corners[(index + 1) % corners.len()], color);
+    }
+}
+
 fn draw_box_edges(gizmos: &mut Gizmos, corners: &[Vec3; 8], scale: f32, color: Color) {
     let center = corners.iter().copied().sum::<Vec3>() / 8.0;
     let scaled = corners.map(|corner| center + (corner - center) * scale);
@@ -515,6 +632,17 @@ fn device_world_corners(node: &DeviceNode) -> [Vec3; 8] {
         Vec3::new(1.0, 1.0, 1.0),
     ]
     .map(|corner| position + rotation * (center + corner * half * scale))
+}
+
+fn device_visual_center(node: &DeviceNode) -> Vec3 {
+    let (center, _) = device_local_bounds(&node.model);
+    let rotation = Quat::from_euler(
+        EulerRot::XYZ,
+        node.rotation_deg[0].to_radians(),
+        node.rotation_deg[1].to_radians(),
+        node.rotation_deg[2].to_radians(),
+    );
+    Vec3::from_array(node.position) + rotation * center
 }
 
 fn finish_trackpad(state: &mut ThreeDEditState) {
@@ -699,8 +827,27 @@ fn device_local_bounds(model: &DeviceModel) -> (Vec3, Vec3) {
 
 #[cfg(test)]
 mod tests {
-    use super::gamepad_translation;
+    use super::{PreviewMove, gamepad_translation};
     use bevy::prelude::{Vec2, Vec3};
+    use hmi_core::{DeviceModel, DeviceNode, HexColor};
+
+    fn device(id: &str, position: [f32; 3]) -> DeviceNode {
+        DeviceNode {
+            id: id.to_string(),
+            name: id.to_string(),
+            position,
+            rotation_deg: [0.0, 0.0, 0.0],
+            scale: [1.0, 1.0, 1.0],
+            visible: true,
+            locked: false,
+            label: None,
+            model: DeviceModel::Ahu {
+                size: [2.0, 2.0, 2.0],
+                color: HexColor("#23434d".to_string()),
+            },
+            bindings: Vec::new(),
+        }
+    }
 
     #[test]
     fn gamepad_stick_follows_camera_basis() {
@@ -710,5 +857,33 @@ mod tests {
         assert_eq!(horizontal, Vec3::X);
         let depth = gamepad_translation(right, forward, Vec2::new(0.0, 0.5), 2.0, 1.0);
         assert_eq!(depth, -Vec3::Z);
+    }
+
+    #[test]
+    fn preview_snaps_group_center_to_ground_planes() {
+        let first = device("a", [0.12, 1.0, -0.09]);
+        let second = device("b", [-0.08, 1.0, 0.06]);
+        let mut preview = PreviewMove::new("screen".to_string(), &[&first, &second]).unwrap();
+        let snap = preview.snap_ground_center();
+        assert!(snap.x);
+        assert!(snap.z);
+        let center = preview
+            .previews
+            .iter()
+            .map(|node| Vec3::from_array(node.position))
+            .sum::<Vec3>()
+            / 2.0;
+        assert!(center.x.abs() < 0.001);
+        assert!(center.z.abs() < 0.001);
+    }
+
+    #[test]
+    fn preview_keeps_position_outside_center_snap_tolerance() {
+        let node = device("a", [0.42, 1.0, -0.37]);
+        let mut preview = PreviewMove::new("screen".to_string(), &[&node]).unwrap();
+        let snap = preview.snap_ground_center();
+        assert!(!snap.x);
+        assert!(!snap.z);
+        assert_eq!(preview.previews[0].position, node.position);
     }
 }

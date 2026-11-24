@@ -108,6 +108,7 @@ impl Plugin for HmiScenePlugin {
                         super::two_d_edit::draw_two_d_overlay,
                         super::three_d_edit::draw_three_d_marquee,
                         super::three_d_edit::draw_three_d_hover,
+                        super::three_d_edit::draw_three_d_alignment,
                         super::two_d_edit::publish_view_state,
                     )
                         .chain(),

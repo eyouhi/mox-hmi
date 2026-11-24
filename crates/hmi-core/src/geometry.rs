@@ -92,6 +92,74 @@ pub fn point_near_polyline(point: [f32; 2], points: &[[f32; 2]], tolerance: f32)
     })
 }
 
+/// Returns the point on a rotated rectangle's boundary nearest to `point`.
+///
+/// The rectangle is expressed in design coordinates and rotates around its
+/// center using the same clockwise screen-space convention as `UiNode`.
+pub fn nearest_point_on_rect_boundary(
+    point: [f32; 2],
+    rect: Rect,
+    rotation_deg: f32,
+) -> Option<[f32; 2]> {
+    if !point[0].is_finite()
+        || !point[1].is_finite()
+        || !rotation_deg.is_finite()
+        || !rect.x.is_finite()
+        || !rect.y.is_finite()
+        || !rect.width.is_finite()
+        || !rect.height.is_finite()
+        || rect.width <= 0.0
+        || rect.height <= 0.0
+    {
+        return None;
+    }
+
+    let center = [rect.x + rect.width * 0.5, rect.y + rect.height * 0.5];
+    let angle = -rotation_deg.to_radians();
+    let (sin, cos) = angle.sin_cos();
+    let offset = [point[0] - center[0], point[1] - center[1]];
+    let local = [
+        offset[0] * cos - offset[1] * sin,
+        offset[0] * sin + offset[1] * cos,
+    ];
+    let half = [rect.width * 0.5, rect.height * 0.5];
+    let clamped = [
+        local[0].clamp(-half[0], half[0]),
+        local[1].clamp(-half[1], half[1]),
+    ];
+    let boundary = if (local[0] - clamped[0]).abs() > f32::EPSILON
+        || (local[1] - clamped[1]).abs() > f32::EPSILON
+    {
+        clamped
+    } else {
+        let distances = [
+            (local[0] + half[0]).abs(),
+            (half[0] - local[0]).abs(),
+            (local[1] + half[1]).abs(),
+            (half[1] - local[1]).abs(),
+        ];
+        let edge = distances
+            .into_iter()
+            .enumerate()
+            .min_by(|left, right| left.1.total_cmp(&right.1))
+            .map(|(index, _)| index)
+            .unwrap_or(0);
+        match edge {
+            0 => [-half[0], local[1]],
+            1 => [half[0], local[1]],
+            2 => [local[0], -half[1]],
+            _ => [local[0], half[1]],
+        }
+    };
+
+    let angle = rotation_deg.to_radians();
+    let (sin, cos) = angle.sin_cos();
+    Some([
+        center[0] + boundary[0] * cos - boundary[1] * sin,
+        center[1] + boundary[0] * sin + boundary[1] * cos,
+    ])
+}
+
 pub fn resize_rect(start: Rect, corner: ResizeCorner, delta: [f32; 2], min_size: f32) -> Rect {
     let min_size = if min_size.is_finite() && min_size > 0.0 {
         min_size
@@ -342,5 +410,37 @@ mod tests {
         );
         assert_eq!(snap.x, Some(target_x));
         assert_eq!(snap.y, Some(target_y));
+    }
+
+    #[test]
+    fn nearest_boundary_uses_the_closest_side() {
+        let rect = Rect {
+            x: 100.0,
+            y: 100.0,
+            width: 200.0,
+            height: 80.0,
+        };
+        assert_eq!(
+            nearest_point_on_rect_boundary([125.0, 140.0], rect, 0.0),
+            Some([100.0, 140.0])
+        );
+        assert_eq!(
+            nearest_point_on_rect_boundary([200.0, 140.0], rect, 0.0),
+            Some([200.0, 100.0])
+        );
+    }
+
+    #[test]
+    fn nearest_boundary_follows_rotation() {
+        let rect = Rect {
+            x: 100.0,
+            y: 100.0,
+            width: 200.0,
+            height: 80.0,
+        };
+        assert_eq!(
+            nearest_point_on_rect_boundary([200.0, 20.0], rect, 90.0),
+            Some([200.0, 40.0])
+        );
     }
 }

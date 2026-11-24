@@ -58,6 +58,19 @@ pub struct NodeVisual {
     pub text: Option<Entity>,
     pub gauge: Option<GaugeVisual>,
     pub rotors: Vec<Entity>,
+    pub pipe: Option<PipeVisual>,
+}
+
+#[derive(Debug, Clone)]
+pub struct PipeVisual {
+    pub segments: Vec<PipeSegmentVisual>,
+    pub joints: Vec<Entity>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct PipeSegmentVisual {
+    pub entity: Entity,
+    pub base_length: f32,
 }
 
 #[derive(Resource, Default)]
@@ -112,6 +125,7 @@ fn spawn_node(
         text: None,
         gauge: None,
         rotors: Vec::new(),
+        pipe: None,
     };
 
     let width = node.rect.width;
@@ -307,7 +321,7 @@ fn spawn_node(
                 thickness,
                 color,
             } => {
-                spawn_pipe(
+                visual.pipe = Some(spawn_pipe(
                     parent,
                     meshes,
                     materials,
@@ -317,7 +331,7 @@ fn spawn_node(
                     *thickness,
                     hex_color(color),
                     &mut visual.materials,
-                );
+                ));
             }
             Widget2D::EquipmentSymbol { equipment, label } => {
                 spawn_equipment(
@@ -418,32 +432,41 @@ fn spawn_pipe(
     thickness: f32,
     color: Color,
     material_list: &mut Vec<Handle<ColorMaterial>>,
-) {
+) -> PipeVisual {
     let material = color_material(materials, color);
     material_list.push(material.clone());
+    let mut segments = Vec::with_capacity(points.len().saturating_sub(1));
     for segment in points.windows(2) {
         let start = local_design_to_world(segment[0], width, height);
         let end = local_design_to_world(segment[1], width, height);
         let delta = end - start;
-        let length = delta.length();
-        if length <= f32::EPSILON {
-            continue;
-        }
-        parent.spawn((
-            Mesh2d(meshes.add(Rectangle::new(length, thickness))),
-            MeshMaterial2d(material.clone()),
-            Transform::from_xyz((start.x + end.x) * 0.5, (start.y + end.y) * 0.5, 0.15)
-                .with_rotation(Quat::from_rotation_z(delta.y.atan2(delta.x))),
-        ));
+        let base_length = delta.length().max(0.001);
+        let entity = parent
+            .spawn((
+                Mesh2d(meshes.add(Rectangle::new(base_length, thickness))),
+                MeshMaterial2d(material.clone()),
+                Transform::from_xyz((start.x + end.x) * 0.5, (start.y + end.y) * 0.5, 0.15)
+                    .with_rotation(Quat::from_rotation_z(delta.y.atan2(delta.x))),
+            ))
+            .id();
+        segments.push(PipeSegmentVisual {
+            entity,
+            base_length,
+        });
     }
+    let mut joints = Vec::with_capacity(points.len());
     for point in points {
         let local = local_design_to_world(*point, width, height);
-        parent.spawn((
-            Mesh2d(meshes.add(Circle::new(thickness * 0.5))),
-            MeshMaterial2d(material.clone()),
-            Transform::from_xyz(local.x, local.y, 0.16),
-        ));
+        let entity = parent
+            .spawn((
+                Mesh2d(meshes.add(Circle::new(thickness * 0.5))),
+                MeshMaterial2d(material.clone()),
+                Transform::from_xyz(local.x, local.y, 0.16),
+            ))
+            .id();
+        joints.push(entity);
     }
+    PipeVisual { segments, joints }
 }
 
 fn local_design_to_world(point: [f32; 2], width: f32, height: f32) -> Vec2 {

@@ -2,8 +2,8 @@ use dioxus::prelude::*;
 use hmi_core::{
     BarDirection, BatchCommandResult, ButtonAction, CommandResult, DeviceModel, DeviceNode,
     EditorCommand, EditorSession, EquipmentKind, HexColor, HmiError, ProjectDocument, Rect, Screen,
-    TagSnapshot, TagValue, TagValueType, TextAlign, UiNode, Widget2D, bas_demo, export_filename,
-    from_json, to_json, unique_node_id,
+    TagSnapshot, TagValue, TagValueType, TextAlign, UiNode, Widget2D, bas_demo,
+    display_axis_to_scene, export_filename, from_json, to_json, unique_node_id,
 };
 #[cfg(not(target_arch = "wasm32"))]
 use std::sync::{
@@ -1286,6 +1286,53 @@ pub fn camera_reset_revision() -> u32 {
 
 pub fn reset_camera_3d() {
     *CAMERA_RESET_REVISION.write() += 1;
+}
+
+pub fn align_selected_3d(display_axis: usize) -> Result<usize, String> {
+    if display_axis > 2 {
+        return Err("无效的 3D 中心面".to_string());
+    }
+    let project = project();
+    let screen_id = active_screen().unwrap_or_else(|| project.startup_screen.clone());
+    let Some(Screen::ThreeD { nodes, .. }) = project.screen(&screen_id) else {
+        return Err("当前画面不是 3D 画面".to_string());
+    };
+    let selected = selected_nodes();
+    let unlocked = selected
+        .iter()
+        .filter_map(|id| nodes.iter().find(|node| &node.id == id))
+        .filter(|node| !node.locked && node.visible)
+        .collect::<Vec<_>>();
+    if unlocked.is_empty() {
+        return Err("请先选择至少一个未锁定的 3D 设备".to_string());
+    }
+    let scene_axis = display_axis_to_scene(display_axis);
+    let center = unlocked
+        .iter()
+        .map(|node| node.position[scene_axis])
+        .sum::<f32>()
+        / unlocked.len() as f32;
+    if center.abs() <= f32::EPSILON {
+        return Ok(0);
+    }
+    let commands = unlocked
+        .iter()
+        .map(|node| {
+            let mut updated = (*node).clone();
+            updated.position[scene_axis] -= center;
+            EditorCommand::Update3dNode {
+                screen_id: screen_id.clone(),
+                node: updated,
+            }
+        })
+        .collect::<Vec<_>>();
+    execute_batch(commands).map_err(|error| error.to_string())?;
+    let axis = ["X", "Y", "Z"][display_axis];
+    set_notice(
+        NoticeLevel::Info,
+        format!("已将 {} 个设备对齐到 {axis}=0 中心面", unlocked.len()),
+    );
+    Ok(unlocked.len())
 }
 
 pub fn set_scene_labels_3d(labels: Vec<SceneLabel3D>) {

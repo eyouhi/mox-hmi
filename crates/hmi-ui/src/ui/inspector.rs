@@ -119,6 +119,7 @@ fn MultiInspector(screen_id: String, ids: Vec<String>) -> Element {
     };
     let primary = ids.last().cloned().unwrap_or_default();
     let all_locked = !names.is_empty() && locked_count == names.len();
+    let is_three_d = kind.starts_with("3D");
     let mut preview = names.iter().take(6).cloned().collect::<Vec<_>>().join("、");
     if names.len() > 6 {
         preview.push_str(&format!(" 等 {} 个", names.len()));
@@ -180,6 +181,44 @@ fn MultiInspector(screen_id: String, ids: Vec<String>) -> Element {
                         focus_canvas();
                     },
                     "删除"
+                }
+                if is_three_d {
+                    button {
+                        class: "mini-button",
+                        "data-testid": "multi-align-3d-x",
+                        disabled: all_locked,
+                        onclick: move |_| {
+                            if let Err(error) = bridge::align_selected_3d(0) {
+                                report_error(error);
+                            }
+                            focus_canvas();
+                        },
+                        "垂直中心面 X=0"
+                    }
+                    button {
+                        class: "mini-button",
+                        "data-testid": "multi-align-3d-y",
+                        disabled: all_locked,
+                        onclick: move |_| {
+                            if let Err(error) = bridge::align_selected_3d(1) {
+                                report_error(error);
+                            }
+                            focus_canvas();
+                        },
+                        "垂直中心面 Y=0"
+                    }
+                    button {
+                        class: "mini-button",
+                        "data-testid": "multi-align-3d-z",
+                        disabled: all_locked,
+                        onclick: move |_| {
+                            if let Err(error) = bridge::align_selected_3d(2) {
+                                report_error(error);
+                            }
+                            focus_canvas();
+                        },
+                        "水平中心面 Z=0"
+                    }
                 }
             }
             p { class: "kind-note", "组移动、组轻推、剪切、粘贴和删除都会合并为一条撤销记录。锁定节点不会被组操作修改。" }
@@ -720,6 +759,7 @@ fn Widget2DEditor(screen_id: String, node: UiNode) -> Element {
             thickness,
             color,
         } => rsx! {
+            p { class: "kind-note", "画布中拖动圆形折点；拖动端点靠近设备会吸附到设备边缘，Shift 锁定水平/垂直方向。" }
             TextField {
                 label: "折点 x,y;x,y".to_string(),
                 test_id: "widget-points".to_string(),
@@ -933,6 +973,44 @@ fn Inspector3D(screen_id: String, node: DeviceNode) -> Element {
                             update_3d(&screen_id, node.clone());
                         }
                     },
+                }
+                div { class: "field-grid two",
+                    button {
+                        class: "mini-button",
+                        "data-testid": "align-3d-x",
+                        disabled: locked,
+                        onclick: move |_| {
+                            if let Err(error) = bridge::align_selected_3d(0) {
+                                report_error(error);
+                            }
+                            focus_canvas();
+                        },
+                        "垂直中心面 X=0"
+                    }
+                    button {
+                        class: "mini-button",
+                        "data-testid": "align-3d-y",
+                        disabled: locked,
+                        onclick: move |_| {
+                            if let Err(error) = bridge::align_selected_3d(1) {
+                                report_error(error);
+                            }
+                            focus_canvas();
+                        },
+                        "垂直中心面 Y=0"
+                    }
+                    button {
+                        class: "mini-button",
+                        "data-testid": "align-3d-z",
+                        disabled: locked,
+                        onclick: move |_| {
+                            if let Err(error) = bridge::align_selected_3d(2) {
+                                report_error(error);
+                            }
+                            focus_canvas();
+                        },
+                        "水平中心面 Z=0"
+                    }
                 }
                 button {
                     class: "mini-button",
