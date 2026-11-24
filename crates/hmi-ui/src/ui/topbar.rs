@@ -15,6 +15,7 @@ pub fn Topbar() -> Element {
     let can_undo = bridge::can_undo();
     let can_redo = bridge::can_redo();
     let gamepad = bridge::gamepad_status();
+    let delete_fx_enabled = bridge::delete_fx_enabled();
 
     let engine_text = match (webgpu, &engine) {
         (Some(false), _) if cfg!(target_arch = "wasm32") => "WebGPU 不可用",
@@ -106,6 +107,14 @@ pub fn Topbar() -> Element {
                     aria_keyshortcuts: "F1",
                     onclick: move |_| bridge::set_guide_open(true),
                     "操作指引"
+                }
+                button {
+                    class: "toolbar-button toolbar-button-quiet",
+                    "data-testid": "delete-fx-toggle",
+                    title: if delete_fx_enabled { "删除动画已开启，点击关闭" } else { "删除动画已关闭，点击开启" },
+                    "aria-pressed": if delete_fx_enabled { "true" } else { "false" },
+                    onclick: move |_| bridge::set_delete_fx_enabled(!delete_fx_enabled),
+                    if delete_fx_enabled { "吃豆人 · 开" } else { "吃豆人 · 关" }
                 }
                 button {
                     class: "toolbar-button",

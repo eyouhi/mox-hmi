@@ -12,8 +12,10 @@ use mox_hmi_control::{
     http::{self, HttpConfig},
 };
 use mox_hmi_ui::control::{NativeMcpBridge, install_native_mcp_bridge};
+use parley::FontContext;
+use parley::fontique::{Blob, FontInfoOverride, FontWeight};
 use std::{
-    env,
+    env, fs,
     net::SocketAddr,
     path::{Path, PathBuf},
     sync::{Arc, mpsc},
@@ -151,18 +153,41 @@ fn run() -> Result<(), String> {
         Arc::new(move || endpoint.clone()),
     ))?;
 
-    bevy_widget::install_asset_path(asset_path()?);
+    let assets = asset_path()?;
+    bevy_widget::install_asset_path(assets.clone());
     mox_hmi_ui::install_native_viewport(bevy_widget::viewport);
     control_native::install(native_control);
 
-    let config = NativeConfig::new().with_window_attributes(
-        WindowAttributes::default()
-            .with_title("MOX HMI Studio")
-            .with_surface_size(LogicalSize::new(1440.0, 900.0))
-            .with_min_surface_size(LogicalSize::new(1080.0, 680.0)),
-    );
+    let config = NativeConfig::new()
+        .with_font_ctx(ui_font_context(Path::new(&assets)))
+        .with_window_attributes(
+            WindowAttributes::default()
+                .with_title("MOX HMI Studio")
+                .with_surface_size(LogicalSize::new(1440.0, 900.0))
+                .with_min_surface_size(LogicalSize::new(1080.0, 680.0)),
+        );
     dioxus_native::launch_cfg(EditorRoot, Vec::new(), vec![Box::new(config)]);
     Ok(())
+}
+
+fn ui_font_context(assets: &Path) -> FontContext {
+    let mut context = FontContext::new();
+    let path = assets.join("fonts/NotoSerifCJKsc-Regular.otf");
+    match fs::read(&path) {
+        Ok(bytes) => {
+            let blob = Blob::new(Arc::new(bytes) as _);
+            context.collection.register_fonts(
+                blob,
+                Some(FontInfoOverride {
+                    family_name: Some("Noto Serif CJK SC"),
+                    weight: Some(FontWeight::NORMAL),
+                    ..FontInfoOverride::default()
+                }),
+            );
+        }
+        Err(error) => eprintln!("无法加载 UI 中文字体 {}: {error}", path.display()),
+    }
+    context
 }
 
 #[component]

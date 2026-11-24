@@ -582,6 +582,12 @@ pub fn wheel_intent(event: &MouseWheel, keyboard: &ButtonInput<KeyCode>) -> Whee
     )
 }
 
+pub const PINCH_ZOOM_SENSITIVITY: f32 = 1.2;
+
+pub fn pinch_zoom_factor(delta: f32) -> f32 {
+    (delta * PINCH_ZOOM_SENSITIVITY).exp()
+}
+
 fn wheel_intent_from(unit: MouseScrollUnit, zoom_modifier: bool, mouse_wheel: bool) -> WheelIntent {
     if zoom_modifier || unit == MouseScrollUnit::Line || mouse_wheel {
         WheelIntent::Zoom
@@ -688,8 +694,10 @@ pub fn cycle_screen(direction: isize) {
 
 pub fn gamepad_shortcuts(
     pad: Res<GamepadState>,
+    time: Res<Time>,
     tuning: Res<super::controller_tuning::ControllerTuningState>,
     mut guide_was_open: Local<bool>,
+    mut delete_armed: Local<Option<(f64, Vec<String>)>>,
 ) {
     let guide_open = crate::bridge::guide_open();
     let guide_closed_this_frame = *guide_was_open && !guide_open;
@@ -713,6 +721,34 @@ pub fn gamepad_shortcuts(
     }
     if pad.just_pressed(PadButton::Circle) {
         crate::bridge::select_node(None);
+        return;
+    }
+    if pad.just_pressed(PadButton::L3) {
+        let selected = crate::bridge::selected_nodes();
+        if selected.is_empty() {
+            crate::bridge::set_notice(
+                crate::bridge::NoticeLevel::Warning,
+                "先选择要删除的节点，再连按两次 L3",
+            );
+            *delete_armed = None;
+            return;
+        }
+        let now = time.elapsed_secs_f64();
+        let confirmed = delete_armed
+            .as_ref()
+            .is_some_and(|(deadline, armed)| now <= *deadline && armed == &selected);
+        if confirmed {
+            *delete_armed = None;
+            if let Err(error) = crate::bridge::delete_selection() {
+                crate::bridge::set_notice(crate::bridge::NoticeLevel::Error, error);
+            }
+        } else {
+            *delete_armed = Some((now + 2.0, selected.clone()));
+            crate::bridge::set_notice(
+                crate::bridge::NoticeLevel::Warning,
+                format!("再按一次 L3 删除 {} 个节点（2 秒内有效）", selected.len()),
+            );
+        }
         return;
     }
     if pad.just_pressed(PadButton::R3)
@@ -797,6 +833,13 @@ mod tests {
             wheel_intent_from(MouseScrollUnit::Pixel, false, true),
             WheelIntent::Zoom
         );
+    }
+
+    #[test]
+    fn pinch_out_is_zoom_in() {
+        assert!(pinch_zoom_factor(0.05) > 1.0);
+        assert!(pinch_zoom_factor(-0.05) < 1.0);
+        assert_eq!(pinch_zoom_factor(0.0), 1.0);
     }
 
     #[test]

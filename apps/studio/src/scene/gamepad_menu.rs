@@ -70,6 +70,11 @@ pub fn gamepad_menu(pad: Res<GamepadState>, mut state: ResMut<GamepadMenuState>)
         return;
     }
 
+    if !state.open && pad.just_pressed(PadButton::Triangle) {
+        open_add(&mut state);
+        return;
+    }
+
     if !state.open {
         return;
     }
@@ -219,7 +224,7 @@ fn open_root(state: &mut GamepadMenuState) {
         },
         MenuEntry {
             label: "编辑所选".to_string(),
-            detail: format!("{selection_count} 个节点 · 复制、粘贴、删除"),
+            detail: format!("{selection_count} 个节点 · L3 连按两次可直接删除"),
             action: MenuAction::OpenEdit,
         },
         MenuEntry {
@@ -234,7 +239,7 @@ fn open_root(state: &mut GamepadMenuState) {
         },
         MenuEntry {
             label: add_menu_title(),
-            detail: "进入组件库".to_string(),
+            detail: "新组件自动错开摆放".to_string(),
             action: MenuAction::OpenAdd,
         },
         MenuEntry {
@@ -379,7 +384,7 @@ fn open_add(state: &mut GamepadMenuState) {
         .iter()
         .map(|entry| MenuEntry {
             label: format!("添加{}", entry.label),
-            detail: "放到当前视野中心".to_string(),
+            detail: "自动错开摆放并选中".to_string(),
             action: MenuAction::Add(entry.kind),
         })
         .collect::<Vec<_>>();
@@ -405,9 +410,9 @@ fn publish(state: &GamepadMenuState) {
         MenuLevel::Screens => "画面",
     };
     let hint = match state.level {
-        MenuLevel::Root => "↑↓ 选择 · × 执行 · ○ 返回 · Options 关闭",
+        MenuLevel::Root => "↑↓ 选择 · × 执行 · △ 新建 · L3 删除 · Options 关闭",
         MenuLevel::Edit => "↑↓ 选择 · × 执行 · ○ 返回",
-        MenuLevel::Add => "↑↓ 选择 · × 添加到画面 · ○ 返回",
+        MenuLevel::Add => "↑↓ 选择 · × 添加（自动错开）· ○ 返回",
         MenuLevel::Tags => "↑↓ 浏览 · × 在数据字典中选中 · ○ 返回",
         MenuLevel::Screens => "↑↓ 选择 · × 执行 · ○ 返回",
     };

@@ -95,7 +95,7 @@ pub fn spawn_two_d_screen(
     }
 }
 
-fn spawn_node(
+pub(crate) fn spawn_node(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<ColorMaterial>,

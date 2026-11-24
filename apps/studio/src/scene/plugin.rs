@@ -62,6 +62,7 @@ pub struct HmiScenePlugin;
 impl Plugin for HmiScenePlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(MeshPickingPlugin)
+            .add_message::<super::CanvasPinch>()
             .init_resource::<CachedProject>()
             .init_resource::<TwoDVisualIndex>()
             .init_resource::<ThreeDVisualIndex>()
@@ -72,12 +73,19 @@ impl Plugin for HmiScenePlugin {
             .init_resource::<ThreeDEditState>()
             .init_resource::<super::two_d_edit::TwoDEditState>()
             .init_resource::<super::two_d_edit::TwoDCameraState>()
+            .init_resource::<super::delete_fx::DeleteFxState>()
             .init_resource::<super::gamepad_menu::GamepadMenuState>()
             .init_resource::<super::three_d::ThreeDPointerState>()
             .init_resource::<HoveredThreeD>()
             .add_systems(
                 Startup,
-                (load_hmi_font, setup_cameras, super::announce_ready).chain(),
+                (
+                    load_hmi_font,
+                    setup_cameras,
+                    super::delete_fx::setup_delete_fx_camera,
+                    super::announce_ready,
+                )
+                    .chain(),
             )
             .add_systems(
                 Update,
@@ -109,6 +117,8 @@ impl Plugin for HmiScenePlugin {
                         super::three_d_edit::draw_three_d_marquee,
                         super::three_d_edit::draw_three_d_hover,
                         super::three_d_edit::draw_three_d_alignment,
+                        super::delete_fx::start_delete_fx,
+                        super::delete_fx::tick_delete_fx,
                         super::two_d_edit::publish_view_state,
                     )
                         .chain(),
@@ -254,7 +264,10 @@ fn sync_scene(
 fn sync_active_camera(
     cached: Res<CachedProject>,
     cameras: Res<HmiCameras>,
-    mut query: Query<(&mut Camera, Has<Camera2d>)>,
+    mut query: Query<
+        (&mut Camera, Has<Camera2d>),
+        Without<super::delete_fx::DeleteFxOverlayCamera>,
+    >,
 ) {
     let is_2d = cached.is_two_d();
     for (mut camera, is_camera_2d) in &mut query {

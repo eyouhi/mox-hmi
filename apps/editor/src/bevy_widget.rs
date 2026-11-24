@@ -25,7 +25,7 @@ use blitz_traits::events::{
 use dioxus::prelude::*;
 use dioxus_native::{CustomWidgetAttr, DeviceHandle};
 use keyboard_types::{Code, Key, NamedKey};
-use mox_hmi_studio::scene::plugin::NATIVE_TEXTURE_VIEW;
+use mox_hmi_studio::scene::{CanvasPinch, plugin::NATIVE_TEXTURE_VIEW};
 use peniko::{
     Fill, ImageBrush, ImageSampler,
     kurbo::{Affine, Rect},
@@ -199,9 +199,13 @@ impl BevyWidget {
         if deltas.is_empty() {
             return;
         }
-        let y = -deltas.into_iter().sum::<f32>() * 10.0;
+        let delta = deltas.into_iter().sum::<f32>();
         if let Some(runtime) = self.runtime.as_mut() {
-            runtime.mouse_wheel(MouseScrollUnit::Line, 0.0, y);
+            runtime
+                .sub_apps
+                .main
+                .world_mut()
+                .write_message(CanvasPinch { delta });
         }
     }
 

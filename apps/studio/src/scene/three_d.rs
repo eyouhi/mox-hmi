@@ -126,7 +126,7 @@ fn spawn_room(
     ));
 }
 
-fn spawn_device(
+pub(crate) fn spawn_device(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<StandardMaterial>,

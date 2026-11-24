@@ -1,3 +1,4 @@
+use super::CanvasPinch;
 use super::input::{self, GamepadState, PadButton};
 use super::plugin::{CachedProject, HmiCameras};
 use bevy::input::mouse::MouseScrollUnit;
@@ -58,6 +59,7 @@ pub fn orbit_system(
     mouse_motion: Res<AccumulatedMouseMotion>,
     pad: Res<GamepadState>,
     mut wheel_events: MessageReader<MouseWheel>,
+    mut pinch_events: MessageReader<CanvasPinch>,
     mut orbit: ResMut<OrbitCamera>,
     mut camera_query: Query<&mut Transform, With<Camera3d>>,
     mut reset_revision: Local<u32>,
@@ -65,6 +67,9 @@ pub fn orbit_system(
     if !cached.is_three_d() {
         crate::bridge::set_axis_gizmo_3d(None);
         for event in wheel_events.read() {
+            let _ = event;
+        }
+        for event in pinch_events.read() {
             let _ = event;
         }
         return;
@@ -113,6 +118,7 @@ pub fn orbit_system(
             &mut orbit,
             &transform,
         );
+        apply_orbit_pinch(&mut pinch_events, pointer_on_canvas, &mut orbit);
         orbit.apply(&mut transform);
         publish_axis_gizmo(&transform);
     }
@@ -259,6 +265,29 @@ fn apply_orbit_wheel(
     }
 }
 
+fn apply_orbit_pinch(
+    pinch_events: &mut MessageReader<'_, '_, CanvasPinch>,
+    pointer_on_canvas: bool,
+    orbit: &mut OrbitCamera,
+) {
+    if !pointer_on_canvas {
+        for event in pinch_events.read() {
+            let _ = event;
+        }
+        return;
+    }
+    for event in pinch_events.read() {
+        if event.delta.abs() <= f32::EPSILON {
+            continue;
+        }
+        apply_orbit_pinch_delta(orbit, event.delta);
+    }
+}
+
+fn apply_orbit_pinch_delta(orbit: &mut OrbitCamera, delta: f32) {
+    orbit.distance = (orbit.distance / input::pinch_zoom_factor(delta)).clamp(6.0, 24.0);
+}
+
 fn publish_axis_gizmo(transform: &Transform) {
     let right = transform.right().as_vec3();
     let up = transform.up().as_vec3();
@@ -320,7 +349,9 @@ fn model_span(model: &DeviceModel) -> f32 {
 
 #[cfg(test)]
 mod tests {
-    use super::{OrbitCamera, apply_right_stick_orbit, wheel_pan_focus_delta};
+    use super::{
+        OrbitCamera, apply_orbit_pinch_delta, apply_right_stick_orbit, wheel_pan_focus_delta,
+    };
     use bevy::prelude::{Vec2, Vec3};
 
     #[test]
@@ -350,5 +381,17 @@ mod tests {
             wheel_pan_focus_delta(Vec2::new(10.0, 5.0), Vec3::X, Vec3::Y, 2.0),
             Vec3::new(-20.0, 10.0, 0.0)
         );
+    }
+
+    #[test]
+    fn pinch_out_moves_orbit_camera_closer() {
+        let mut orbit = OrbitCamera::default();
+        let before = orbit.distance;
+        apply_orbit_pinch_delta(&mut orbit, 0.1);
+        assert!(orbit.distance < before);
+
+        let closer = orbit.distance;
+        apply_orbit_pinch_delta(&mut orbit, -0.1);
+        assert!(orbit.distance > closer);
     }
 }

@@ -3,7 +3,6 @@ mod e2e;
 mod server;
 
 use std::{
-    collections::BTreeSet,
     env, fs,
     io::ErrorKind,
     net::TcpStream,
@@ -35,7 +34,7 @@ fn try_main() -> Result<(), String> {
         Some("bundle") => bundle(command_args(args)),
         Some("verify") => verify(command_args(args)),
         Some("check-wasm-size") => check_wasm_size(command_args(args)),
-        Some("font-subset") => font_subset(command_args(args)),
+        Some("font-subset") | Some("font-sync") => font_sync(command_args(args)),
         Some("e2e") => e2e::run(command_args(args)),
         Some("control-e2e") => control_e2e::run(command_args(args)),
         Some("clean") => clean(command_args(args)),
@@ -455,86 +454,76 @@ fn find_release_wasm(root: &Path) -> Result<PathBuf, String> {
         .ok_or_else(|| format!("目录中没有找到 *_bg*.wasm: {}", root.display()))
 }
 
-fn font_subset(args: Vec<String>) -> Result<(), String> {
+fn font_sync(args: Vec<String>) -> Result<(), String> {
     if !args.is_empty() {
-        return Err("cargo x font-subset 不接受额外参数".to_string());
+        return Err("cargo x font-sync 不接受额外参数".to_string());
     }
     ensure_tool("curl")?;
+    ensure_tool("python3")?;
 
     let root = workspace_root();
-    let source = PathBuf::from("/tmp/mox-font/NotoSansSC-Regular.otf");
-    let output = root.join("apps/studio/public/assets/fonts/NotoSansSC-Subset.otf");
-    let license = root.join("apps/studio/public/assets/fonts/OFL.txt");
-    let font_url = "https://raw.githubusercontent.com/notofonts/noto-cjk/main/Sans/OTF/SimplifiedChinese/NotoSansCJKsc-Regular.otf";
-    let license_url = "https://raw.githubusercontent.com/notofonts/noto-cjk/main/Sans/LICENSE";
+    let fonts = root.join("apps/studio/public/assets/fonts");
+    let output = fonts.join("NotoSerifCJKsc-Regular.otf");
+    let web_output = fonts.join("NotoSerifCJKsc-Regular.woff2");
+    let license = fonts.join("OFL.txt");
+    let font_url = "https://raw.githubusercontent.com/notofonts/noto-cjk/main/Serif/OTF/SimplifiedChinese/NotoSerifCJKsc-Regular.otf";
     if let Some(parent) = output.parent() {
         fs::create_dir_all(parent).map_err(|error| format!("无法创建字体目录: {error}"))?;
     }
-    fs::create_dir_all(source.parent().unwrap_or(Path::new("/tmp")))
-        .map_err(|error| format!("无法创建字体缓存目录: {error}"))?;
-    download_if_missing(&source, font_url, 0)?;
-    download_if_missing(&license, license_url, 1_000)?;
-
-    let mut chars = BTreeSet::new();
-    chars.extend((0x20_u8..0x7f).map(char::from));
-    chars.extend("·°℃²—–≤≥→←↑↓×".chars());
-    for base in [root.join("crates"), root.join("apps/studio/src")] {
-        collect_source_chars(&base, &mut chars)?;
+    download_if_missing(&output, font_url, 20_000_000)?;
+    if !license.exists() {
+        return Err(format!(
+            "缺少字体许可文件 {}；请从 Noto CJK 仓库补充 OFL.txt",
+            license.display()
+        ));
     }
 
-    println!("字体字符数: {}", chars.len());
+    let regenerate_woff2 = !web_output.exists()
+        || fs::metadata(&output).ok().and_then(|m| m.modified().ok())
+            > fs::metadata(&web_output)
+                .ok()
+                .and_then(|m| m.modified().ok());
+    if regenerate_woff2 {
+        println!("生成 Web 字体: {}", web_output.display());
+        let status = Command::new("python3")
+            .args([
+                "-m",
+                "fontTools.ttLib.woff2",
+                "compress",
+                "--quiet",
+                "-o",
+                web_output.to_string_lossy().as_ref(),
+                output.to_string_lossy().as_ref(),
+            ])
+            .status()
+            .map_err(|error| format!("无法启动 fontTools: {error}"))?;
+        exit_on_failure(status, "fontTools")?;
+    }
 
-    let font_data = fs::read(&source)
-        .map_err(|error| format!("无法读取源字体 {}: {error}", source.display()))?;
-    let text: String = chars.iter().collect();
-    let mut font = fontoxide_ttlib::Font::read(font_data, fontoxide_ttlib::ReadOptions::default())
-        .map_err(|error| format!("无法读取源字体: {error}"))?;
-    let mut options = fontoxide_subset::Options::default();
-    options.layout_features = vec![fontoxide_subset::options::Item::Str("*".to_string())];
-    options.glyph_names = true;
-    options.legacy_cmap = true;
-    options.symbol_cmap = true;
-    options.name_ids = vec![fontoxide_subset::options::Item::Str("*".to_string())];
-    options.name_legacy = true;
-    options.name_languages = vec![fontoxide_subset::options::Item::Str("*".to_string())];
-    options.notdef_glyph = true;
-    options.notdef_outline = true;
-    options.recommended_glyphs = true;
-    let mut subsetter = fontoxide_subset::Subsetter::new(options);
-    subsetter.populate(&[], &[], &[], &text);
-    subsetter
-        .subset(&mut font)
-        .map_err(|error| format!("Rust 字体子集失败: {error}"))?;
-    let subset = font
-        .write(&fontoxide_ttlib::WriteOptions::default())
-        .map_err(|error| format!("无法生成字体子集: {error}"))?;
-    fs::write(&output, &subset)
-        .map_err(|error| format!("无法写入字体子集 {}: {error}", output.display()))?;
-
-    let face = ttf_parser::Face::parse(&subset, 0)
-        .map_err(|error| format!("无法解析生成的字体子集: {error}"))?;
-    let missing: Vec<char> = chars
-        .iter()
-        .copied()
+    let font_data =
+        fs::read(&output).map_err(|error| format!("无法读取字体 {}: {error}", output.display()))?;
+    let face = ttf_parser::Face::parse(&font_data, 0)
+        .map_err(|error| format!("无法解析字体 {}: {error}", output.display()))?;
+    let missing: String = "吃豆人车站湿度送风机频率新建设备"
+        .chars()
         .filter(|character| face.glyph_index(*character).is_none())
         .collect();
-    println!(
-        "Glyphs requested: {}; missing: {}",
-        chars.len(),
-        missing.len()
-    );
     if !missing.is_empty() {
-        let sample: String = missing.iter().take(80).collect();
-        return Err(format!("字体子集缺少字符: {sample}"));
+        return Err(format!("字体缺少字符: {missing}"));
     }
 
     let bytes = fs::metadata(&output)
         .map_err(|error| format!("无法读取字体文件大小: {error}"))?
         .len();
+    let web_bytes = fs::metadata(&web_output)
+        .map_err(|error| format!("无法读取 Web 字体文件大小: {error}"))?
+        .len();
     println!(
-        "Font subset: {} ({:.1} KiB)",
+        "Font: {} ({:.1} MiB); Web: {} ({:.1} MiB)",
         output.display(),
-        bytes as f64 / 1024.0
+        bytes as f64 / (1024.0 * 1024.0),
+        web_output.display(),
+        web_bytes as f64 / (1024.0 * 1024.0),
     );
     println!("字体许可证: {}", license.display());
     Ok(())
@@ -559,21 +548,6 @@ fn download_if_missing(path: &Path, url: &str, minimum_bytes: u64) -> Result<(),
         .status()
         .map_err(|error| format!("无法启动 curl: {error}"))?;
     exit_on_failure(status, "curl")?;
-    Ok(())
-}
-
-fn collect_source_chars(root: &Path, chars: &mut BTreeSet<char>) -> Result<(), String> {
-    let mut files = Vec::new();
-    collect_files(root, &mut |path| {
-        if path.extension().and_then(|extension| extension.to_str()) == Some("rs") {
-            files.push(path.to_path_buf());
-        }
-    })?;
-    for file in files {
-        let source = fs::read_to_string(&file)
-            .map_err(|error| format!("无法读取源文件 {}: {error}", file.display()))?;
-        chars.extend(source.chars().filter(|character| !character.is_control()));
-    }
     Ok(())
 }
 
@@ -863,7 +837,7 @@ fn print_help() {
          cargo x control-e2e            用快速 debug 构建运行 MCP 控制隧道验收\n  \
          cargo x control-e2e --release  用 release 构建运行控制隧道验收\n\n  \
          cargo x check-wasm-size        用 wasm-opt 优化并检查 30 MiB 预算\n  \
-         cargo x font-subset            重建中文字体子集\n\n\
+         cargo x font-sync              重新下载 Noto Serif CJK 字体并生成 WOFF2\n\n\
          cargo x clean                  删除 target/ 和 dist/ 构建产物\n\n\
          开发命令默认使用 debug 构建；cargo x bundle 始终使用 release 构建。\n\
          触觉反馈仅在 cargo x edit 中可用。"

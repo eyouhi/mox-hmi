@@ -192,7 +192,7 @@ fn GuideStart() -> Element {
             }
             div { class: "guide-callout",
                 strong { "手柄菜单：Options" }
-                p { "按 Options 打开菜单，可编辑所选、撤销/重做、添加组件、浏览数据字典、新建或切换画面，以及查看手柄说明。× 执行，○ 返回，Options 关闭；添加的节点会自动选中并出现在视野中心，随后用左摇杆拖动、方向键微调。" }
+                p { "按 Options 打开菜单，可编辑所选、撤销/重做、添加组件、浏览数据字典、新建或切换画面，以及查看手柄说明。× 执行，○ 返回，Options 关闭；按 △ 可直接打开添加菜单，新节点会自动选中并在当前视野附近错开摆放，随后用左摇杆拖动、方向键微调。" }
             }
             div { class: "guide-callout is-soft",
                 strong { "对齐与震动反馈" }
@@ -204,7 +204,7 @@ fn GuideStart() -> Element {
             }
             div { class: "guide-callout is-soft",
                 strong { "三类输入的能力边界" }
-                p { "画布内的选择、组移动、复制/剪切/粘贴、全选、删除、撤销/重做、画面切换和添加节点，均可由 DualSense 完成。剪贴板与删除操作集中在 Options → 编辑所选，避免误触；文本、颜色和 Tag 绑定仍需键鼠或触控板。" }
+                p { "画布内的选择、组移动、复制/剪切/粘贴、全选、删除、撤销/重做、画面切换和添加节点，均可由 DualSense 完成。△ 直接打开添加菜单；删除可连按两次 L3 完成，第一次会提示确认。文本、颜色和 Tag 绑定仍需键鼠或触控板。" }
             }
         }
     }
@@ -248,7 +248,7 @@ fn GuideTwoD() -> Element {
                     tr { td { kbd { "F" } } td { "聚焦全部所选节点" } }
                     tr { td { kbd { "⌘Z" } kbd { "⌘⇧Z" } kbd { "Ctrl+Y" } } td { "撤销 / 重做 / 重做" } }
                     tr { td { kbd { "⌘S" } } td { "立即刷写自动保存（日常无需手动操作）" } }
-                    tr { td { kbd { "Delete" } kbd { "Backspace" } } td { "删除所选节点（锁定节点除外）" } }
+                    tr { td { kbd { "Delete" } kbd { "Backspace" } } td { "删除所选节点（锁定节点除外），吃豆人动画可在顶栏关闭" } }
                     tr { td { kbd { "Esc" } } td { "取消选择 / 关闭指引" } }
                 }
             }
@@ -265,6 +265,8 @@ fn GuideTwoD() -> Element {
                     tr { td { "Cross ×" } td { "聚焦所选节点" } }
                     tr { td { "Circle ○" } td { "取消选择" } }
                     tr { td { "Square □" } td { "原地复制所选节点" } }
+                    tr { td { "Triangle △" } td { "直接打开 2D 图元添加菜单" } }
+                    tr { td { "L3 连按两次" } td { "删除所选节点；第一次会提示确认" } }
                     tr { td { "Options" } td { "打开手柄菜单：编辑、撤销/重做、添加、数据字典、画面" } }
                     tr { td { "Options → 编辑所选" } td { "复制、剪切、粘贴、全选和删除" } }
                     tr { td { "Create" } td { "打开 / 关闭本指引" } }
@@ -322,7 +324,7 @@ fn GuideThreeD() -> Element {
                     tr { td { kbd { "⌘A" } } td { "全选当前画面的可见设备" } }
                     tr { td { kbd { "⌘C" } kbd { "⌘V" } kbd { "⌘X" } } td { "复制 / 粘贴 / 剪切；跨同类型画面粘贴会保留相对位置" } }
                     tr { td { kbd { "⌘D" } } td { "原地复制所选设备，不改写剪贴板" } }
-                    tr { td { kbd { "Delete" } } td { "删除所选设备（锁定设备除外）" } }
+                    tr { td { kbd { "Delete" } } td { "删除所选设备（锁定设备除外），吃豆人动画可在顶栏关闭" } }
                     tr { td { kbd { "⌘Z" } kbd { "⌘⇧Z" } kbd { "Ctrl+Y" } } td { "撤销 / 重做 / 重做" } }
                     tr { td { kbd { "⌘S" } } td { "立即刷写自动保存（日常无需手动操作）" } }
                 }
@@ -341,6 +343,8 @@ fn GuideThreeD() -> Element {
                     tr { td { "Circle ○" } td { "取消选择" } }
                     tr { td { "R3" } td { "重置 3D 视角" } }
                     tr { td { "Square □" } td { "原地复制所选设备" } }
+                    tr { td { "Triangle △" } td { "直接打开 3D 设备添加菜单" } }
+                    tr { td { "L3 连按两次" } td { "删除所选设备；第一次会提示确认" } }
                     tr { td { "L1 / R1" } td { "单选上一个 / 下一个设备" } }
                     tr { td { "Options" } td { "打开手柄菜单：编辑、撤销/重做、添加、数据字典、画面" } }
                     tr { td { "Options → 编辑所选" } td { "复制、剪切、粘贴、全选和删除" } }
@@ -375,6 +379,8 @@ fn GuideGamepad() -> Element {
                     tr { td { "Cross ×" } td { "聚焦所选设备" } }
                     tr { td { "Circle ○" } td { "取消选择" } }
                     tr { td { "Square □" } td { "原地复制所选内容" } }
+                    tr { td { "Triangle △" } td { "直接打开当前画面的添加菜单" } }
+                    tr { td { "L3" } td { "连按两次删除所选；第一次会提示确认，2 秒内有效" } }
                     tr { td { "R3" } td { "3D 重置视角" } }
                     tr { td { "Options" } td { "打开 / 关闭手柄菜单" } }
                     tr { td { "Create" } td { "打开 / 关闭本指引" } }
@@ -397,14 +403,14 @@ fn GuideGamepad() -> Element {
                     tr { td { "画面" } td { "切换上一个 / 下一个画面，或新建 2D / 3D 画面" } }
                 }
             }
-            p { class: "guide-note", "剪贴板、全选和删除集中放在“编辑所选”，不再使用 L3 组合键，避免边移动边误触。左侧“组件库”标题下的提示与菜单内容一致；鼠标/触控板仍可直接点击组件按钮。" }
+            p { class: "guide-note", "△ 从画布直接打开添加菜单，少一层菜单跳转；L3 连按两次删除所选，第一次会显示确认提示，2 秒内再次按下才执行，避免单次误触。剪贴板与全选仍位于“编辑所选”。左侧“组件库”标题下的提示与菜单内容一致；鼠标/触控板仍可直接点击组件按钮。" }
 
             h3 { "组件库：手柄添加" }
             table { class: "guide-table",
                 thead { tr { th { scope: "col", "按键" } th { scope: "col", "结果" } } }
                 tbody {
-                    tr { td { "Options → 添加组件" } td { "进入当前画面的组件列表" } }
-                    tr { td { "方向键 ↑↓" } td { "选择组件；× 添加到当前视野中心并自动选中" } }
+                    tr { td { "△ 或 Options → 添加组件" } td { "进入当前画面的组件列表" } }
+                    tr { td { "方向键 ↑↓" } td { "选择组件；× 添加后在当前视野附近自动错开摆放并选中" } }
                     tr { td { "Circle ○" } td { "返回上一级菜单" } }
                 }
             }

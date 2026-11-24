@@ -1,7 +1,15 @@
+@font-face {
+  font-family: "Noto Serif CJK SC";
+  src: url("assets/fonts/NotoSerifCJKsc-Regular.woff2") format("woff2");
+  font-display: swap;
+  font-style: normal;
+  font-weight: 400;
+}
+
 :root {
   color-scheme: dark;
   background: #050b0f;
-  font-family: "PingFang SC", "Microsoft YaHei", "Noto Sans SC", sans-serif;
+  font-family: "Noto Serif CJK SC", "Noto Serif SC", "Songti SC", "PingFang SC", serif;
 }
 
 html,
@@ -55,7 +63,7 @@ body {
   border-radius: 0.4375rem;
   background: #0d292c;
   color: #37e6d4;
-  font: 800 1.25rem/1 "SFMono-Regular", Consolas, monospace;
+  font: 800 1.25rem/1 "SFMono-Regular", Consolas, "Noto Serif CJK SC", "Noto Serif SC", monospace;
 }
 
 .boot-spinner {

@@ -25,6 +25,8 @@ use wasm_bindgen_futures::JsFuture;
 #[cfg(target_arch = "wasm32")]
 const MAIN_CSS: Asset = asset!("/assets/main.css");
 #[cfg(target_arch = "wasm32")]
+const WEB_FONT_CSS: Asset = asset!("/assets/web-fonts.css");
+#[cfg(target_arch = "wasm32")]
 const FAVICON: Asset = asset!("/assets/favicon.svg");
 #[cfg(not(target_arch = "wasm32"))]
 const NATIVE_CSS: &str = include_str!("../assets/main.css");
@@ -354,6 +356,7 @@ fn document_styles() -> Element {
     {
         rsx! {
             document::Stylesheet { href: MAIN_CSS }
+            document::Stylesheet { href: WEB_FONT_CSS }
             document::Link { rel: "icon", r#type: "image/svg+xml", href: FAVICON }
         }
     }

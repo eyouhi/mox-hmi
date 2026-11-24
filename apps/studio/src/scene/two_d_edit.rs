@@ -1,3 +1,5 @@
+use super::CanvasPinch;
+use super::delete_fx::DeleteFxOverlayCamera;
 use super::input::{self, GamepadState, PadButton};
 use super::plugin::{CachedProject, HmiCameras};
 use super::two_d::{DESIGN_SIZE, HmiNodeRoot, TwoDVisualIndex};
@@ -27,7 +29,11 @@ type TwoDCameraQuery<'w, 's> = Query<
         &'static mut Transform,
         &'static mut Projection,
     ),
-    (With<Camera2d>, Without<HmiNodeRoot>),
+    (
+        With<Camera2d>,
+        Without<HmiNodeRoot>,
+        Without<DeleteFxOverlayCamera>,
+    ),
 >;
 
 type TwoDRootQuery<'w, 's> =
@@ -563,6 +569,7 @@ pub fn two_d_input(
     keyboard: Res<ButtonInput<KeyCode>>,
     pad: Res<GamepadState>,
     mut wheel_events: MessageReader<MouseWheel>,
+    mut pinch_events: MessageReader<CanvasPinch>,
     mut camera_query: TwoDCameraQuery<'_, '_>,
     mut root_query: TwoDRootQuery<'_, '_>,
     mut child_transforms: TwoDChildTransformQuery<'_, '_>,
@@ -570,7 +577,12 @@ pub fn two_d_input(
     mut camera_state: ResMut<TwoDCameraState>,
 ) {
     if !cached.is_two_d() {
-        reset_two_d_input(&cached, &mut wheel_events, &mut edit_state);
+        reset_two_d_input(
+            &cached,
+            &mut wheel_events,
+            &mut pinch_events,
+            &mut edit_state,
+        );
         return;
     }
     let Some(nodes) = active_nodes(&cached) else {
@@ -655,6 +667,16 @@ pub fn two_d_input(
         &mut camera_state,
         cursor,
     );
+    apply_pinch_2d(
+        &mut pinch_events,
+        pointer_on_canvas,
+        camera,
+        camera_transform,
+        &mut transform,
+        &mut projection,
+        &mut camera_state,
+        cursor,
+    );
 
     if !apply_keyboard_2d(
         &cached,
@@ -691,10 +713,12 @@ pub fn two_d_input(
 fn reset_two_d_input(
     cached: &CachedProject,
     wheel_events: &mut MessageReader<'_, '_, MouseWheel>,
+    pinch_events: &mut MessageReader<'_, '_, CanvasPinch>,
     edit_state: &mut TwoDEditState,
 ) {
     finish_gamepad_move(cached, edit_state);
     for _event in wheel_events.read() {}
+    for _event in pinch_events.read() {}
     edit_state.drag = None;
     edit_state.keyboard_snap = (None, None);
 }
@@ -1126,6 +1150,38 @@ fn apply_wheel_2d(
             transform.translation.x += offset.x;
             transform.translation.y += offset.y;
         }
+    }
+}
+
+fn apply_pinch_2d(
+    pinch_events: &mut MessageReader<'_, '_, CanvasPinch>,
+    pointer_on_canvas: bool,
+    camera: &Camera,
+    camera_transform: &GlobalTransform,
+    transform: &mut Transform,
+    projection: &mut Projection,
+    camera_state: &mut TwoDCameraState,
+    cursor: Option<Vec2>,
+) {
+    if !pointer_on_canvas {
+        for event in pinch_events.read() {
+            let _ = event;
+        }
+        return;
+    }
+    for event in pinch_events.read() {
+        if event.delta.abs() <= f32::EPSILON {
+            continue;
+        }
+        apply_zoom_2d(
+            camera,
+            camera_transform,
+            transform,
+            projection,
+            camera_state,
+            cursor,
+            input::pinch_zoom_factor(event.delta),
+        );
     }
 }
 
@@ -1734,7 +1790,10 @@ pub fn draw_two_d_overlay(
     camera_state: Res<TwoDCameraState>,
     time: Res<Time>,
     window_query: Query<&Window, With<PrimaryWindow>>,
-    camera_query: Query<(&Camera, &GlobalTransform), With<Camera2d>>,
+    camera_query: Query<
+        (&Camera, &GlobalTransform),
+        (With<Camera2d>, Without<DeleteFxOverlayCamera>),
+    >,
     mut gizmos: Gizmos,
 ) {
     if !cached.is_two_d() || crate::bridge::WORKSPACE_MODE() == crate::bridge::WorkspaceMode::Run {
@@ -2110,7 +2169,10 @@ fn view_center_design(camera: &Camera, transform: &GlobalTransform) -> Option<[f
 }
 
 pub fn publish_view_state(
-    two_d_cameras: Query<(&Camera, &GlobalTransform), With<Camera2d>>,
+    two_d_cameras: Query<
+        (&Camera, &GlobalTransform),
+        (With<Camera2d>, Without<DeleteFxOverlayCamera>),
+    >,
     camera_state: Res<TwoDCameraState>,
 ) {
     if let Ok((camera, camera_transform)) = two_d_cameras.single()

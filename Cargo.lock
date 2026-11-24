@@ -4057,98 +4057,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "fontoxide-colorlib"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5d3c8bf29253eb33123ae2e92db48d9eb9e5b78969c9c0e25adfa2d491dc637c"
-dependencies = [
- "fontoxide-misc",
- "fontoxide-ttlib",
- "indexmap",
- "log",
- "thiserror 2.0.21",
-]
-
-[[package]]
-name = "fontoxide-encodings"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "66cbacb319f9d9558dc618ef930b82b18b2a393a78966cb50dd8bb34e857efda"
-
-[[package]]
-name = "fontoxide-misc"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5d47fa29459e471fd3a501ce0add5756a421e58cee590c9d0a1ffba8dc3703fa"
-dependencies = [
- "fontoxide-encodings",
- "indexmap",
- "log",
- "roxmltree 0.21.2",
- "thiserror 2.0.21",
-]
-
-[[package]]
-name = "fontoxide-otllib"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2ad0737f2ad04025a3bac964ffb2b39070569fd8a7bcd7200c69b88ea702257a"
-dependencies = [
- "fontoxide-misc",
- "fontoxide-ttlib",
- "indexmap",
- "log",
- "thiserror 2.0.21",
-]
-
-[[package]]
-name = "fontoxide-pens"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f036483af19cfe391e64d56a9491aed15b7c4ef8950beea06def98434a95602b"
-dependencies = [
- "fontoxide-misc",
- "log",
- "thiserror 2.0.21",
-]
-
-[[package]]
-name = "fontoxide-subset"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d4c7ed396e8e6c5f90f6856d5e6120c106543fef5d9afd80abfe306babac0d71"
-dependencies = [
- "fontoxide-colorlib",
- "fontoxide-misc",
- "fontoxide-otllib",
- "fontoxide-ttlib",
- "fontoxide-unicodedata",
- "log",
- "thiserror 2.0.21",
-]
-
-[[package]]
-name = "fontoxide-ttlib"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cb53b45290cb6e5aa3b76f104194da8960343865e0d09cfd4f823d5b354b02f0"
-dependencies = [
- "flate2",
- "fontoxide-encodings",
- "fontoxide-misc",
- "fontoxide-pens",
- "fontoxide-unicodedata",
- "log",
- "thiserror 2.0.21",
-]
-
-[[package]]
-name = "fontoxide-unicodedata"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e64cf7ab702bdd1b110dd9355b5dd677272c3b6eae859b1f389e5c97bf9233f4"
-
-[[package]]
 name = "foreign-types"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5777,6 +5685,7 @@ dependencies = [
  "objc2 0.6.5",
  "objc2-app-kit 0.3.2",
  "objc2-foundation 0.3.2",
+ "parley 0.12.0",
  "peniko",
  "serde",
  "serde_json",
@@ -10627,8 +10536,6 @@ checksum = "ec7a2a501ed189703dba8b08142f057e887dfc4b2cc4db2d343ac6376ba3e0b9"
 name = "xtask"
 version = "0.1.0"
 dependencies = [
- "fontoxide-subset",
- "fontoxide-ttlib",
  "headless_chrome",
  "serde_json",
  "ttf-parser",

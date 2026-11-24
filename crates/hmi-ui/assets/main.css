@@ -29,7 +29,7 @@ body,
 
 body {
   overflow: auto;
-  font-family: "PingFang SC", "Microsoft YaHei", "Noto Sans SC", sans-serif;
+  font-family: "Noto Serif CJK SC", "Noto Serif SC", "Songti SC", "PingFang SC", serif;
   background: var(--bg);
   color: var(--text);
   font-size: 0.8125rem;
@@ -170,7 +170,7 @@ button { color: inherit; }
   border-radius: 0.4375rem;
   background: #0d292c;
   color: var(--cyan);
-  font-family: "SFMono-Regular", Consolas, monospace;
+  font-family: "SFMono-Regular", Consolas, "Noto Serif CJK SC", "Noto Serif SC", monospace;
   font-size: 1.25rem;
   font-weight: 800;
   box-shadow: inset 0 0 0 0.25rem rgba(55, 230, 212, 0.035);
@@ -251,7 +251,7 @@ button { color: inherit; }
   border-radius: 999px;
   background: #0b181f;
   color: var(--muted);
-  font-family: "SFMono-Regular", Consolas, monospace;
+  font-family: "SFMono-Regular", Consolas, "Noto Serif CJK SC", "Noto Serif SC", monospace;
   font-size: 0.625rem;
   letter-spacing: 0.02em;
   white-space: nowrap;
@@ -459,7 +459,7 @@ button { color: inherit; }
   border-radius: 0.3125rem;
   background: #0d292c;
   color: var(--cyan);
-  font-family: "SFMono-Regular", Consolas, monospace;
+  font-family: "SFMono-Regular", Consolas, "Noto Serif CJK SC", "Noto Serif SC", monospace;
   font-size: 0.6875rem;
   font-weight: 750;
 }
@@ -507,7 +507,7 @@ nav.screen-list { display: grid; gap: 0.25rem; }
   border-radius: 0.1875rem;
   background: #0a181e;
   color: var(--cyan);
-  font-family: "SFMono-Regular", Consolas, monospace;
+  font-family: "SFMono-Regular", Consolas, "Noto Serif CJK SC", "Noto Serif SC", monospace;
   font-size: 0.625rem;
   font-weight: 700;
 }
@@ -586,7 +586,7 @@ ul.node-list { display: grid; gap: 0.0625rem; margin-top: 0.5rem; max-height: 13
 
 .palette-glyph {
   color: #8eb0b9;
-  font-family: "SFMono-Regular", Consolas, monospace;
+  font-family: "SFMono-Regular", Consolas, "Noto Serif CJK SC", "Noto Serif SC", monospace;
   font-size: 0.875rem;
   line-height: 1;
 }
@@ -629,7 +629,7 @@ ul.tag-rows {
 
 .tag-value {
   color: var(--cyan);
-  font-family: "SFMono-Regular", Consolas, monospace;
+  font-family: "SFMono-Regular", Consolas, "Noto Serif CJK SC", "Noto Serif SC", monospace;
   font-size: 0.625rem;
   white-space: nowrap;
 }
@@ -655,7 +655,7 @@ ul.tag-rows {
 .readonly-value,
 .device-tag-id {
   color: var(--muted);
-  font-family: "SFMono-Regular", Consolas, monospace;
+  font-family: "SFMono-Regular", Consolas, "Noto Serif CJK SC", "Noto Serif SC", monospace;
   font-size: 0.625rem;
   overflow-wrap: anywhere;
 }
@@ -694,7 +694,7 @@ ul.tag-rows {
 }
 
 .text-input.numeric {
-  font-family: "SFMono-Regular", Consolas, monospace;
+  font-family: "SFMono-Regular", Consolas, "Noto Serif CJK SC", "Noto Serif SC", monospace;
   font-variant-numeric: tabular-nums;
 }
 
@@ -749,7 +749,7 @@ ul.tag-rows {
   border-radius: 0.25rem;
   background: #081319;
   color: var(--cyan);
-  font-family: "SFMono-Regular", Consolas, monospace;
+  font-family: "SFMono-Regular", Consolas, "Noto Serif CJK SC", "Noto Serif SC", monospace;
   font-size: 0.625rem;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -778,7 +778,7 @@ ul.tag-rows {
   border-radius: 0.25rem;
   background: #0d2428;
   color: var(--cyan);
-  font-family: "SFMono-Regular", Consolas, monospace;
+  font-family: "SFMono-Regular", Consolas, "Noto Serif CJK SC", "Noto Serif SC", monospace;
   font-size: 0.625rem;
 }
 
@@ -822,7 +822,7 @@ ul.tag-rows {
   border-radius: 0.25rem;
   background: transparent;
   color: var(--cyan);
-  font-family: "SFMono-Regular", Consolas, monospace;
+  font-family: "SFMono-Regular", Consolas, "Noto Serif CJK SC", "Noto Serif SC", monospace;
   font-size: 0.625rem;
   cursor: pointer;
 }
@@ -852,7 +852,7 @@ ul.tag-rows {
 .status-item { display: flex; align-items: center; gap: 0.375rem; min-width: 0; }
 .status-label { color: var(--muted-2); white-space: nowrap; }
 .status-value { color: #b9cbcf; font-size: 0.625rem; overflow-wrap: anywhere; }
-.status-value.numeric { font-family: "SFMono-Regular", Consolas, monospace; }
+.status-value.numeric { font-family: "SFMono-Regular", Consolas, "Noto Serif CJK SC", "Noto Serif SC", monospace; }
 .status-item.is-error { color: var(--red); }
 
 .canvas-stage {
@@ -998,7 +998,7 @@ ul.tag-rows {
 .axis-gizmo-label {
   position: absolute;
   transform: translate(-50%, -50%);
-  font-family: "SFMono-Regular", Consolas, monospace;
+  font-family: "SFMono-Regular", Consolas, "Noto Serif CJK SC", "Noto Serif SC", monospace;
   font-size: 0.625rem;
   font-weight: 700;
 }
@@ -1047,7 +1047,7 @@ ul.tag-rows {
   border-radius: 0.25rem;
   background: rgba(5, 15, 20, 0.82);
   color: #d9eef0;
-  font-family: "SFMono-Regular", Consolas, monospace;
+  font-family: "SFMono-Regular", Consolas, "Noto Serif CJK SC", "Noto Serif SC", monospace;
   font-size: 0.625rem;
   line-height: 1.25;
   white-space: nowrap;
@@ -1107,14 +1107,14 @@ ul.device-binding-list { display: grid; gap: 0.0625rem; margin-top: 0.5625rem; }
 
 .device-tag-name { color: #c6d7da; font-size: 0.65625rem; }
 .device-tag-id { display: block; margin-top: 0.125rem; }
-.device-tag-value { color: var(--cyan); font-family: "SFMono-Regular", Consolas, monospace; font-size: 0.75rem; white-space: nowrap; }
+.device-tag-value { color: var(--cyan); font-family: "SFMono-Regular", Consolas, "Noto Serif CJK SC", "Noto Serif SC", monospace; font-size: 0.75rem; white-space: nowrap; }
 .device-hint { margin-top: 0.6875rem; color: var(--muted-2); font-size: 0.625rem; line-height: 1.5; }
 
 .runtime-brand { min-width: 19.375rem; }
 
 .runtime-clock {
   color: var(--cyan);
-  font-family: "SFMono-Regular", Consolas, monospace;
+  font-family: "SFMono-Regular", Consolas, "Noto Serif CJK SC", "Noto Serif SC", monospace;
   font-size: 0.9375rem;
   font-variant-numeric: tabular-nums;
 }
@@ -1129,7 +1129,7 @@ ul.device-binding-list { display: grid; gap: 0.0625rem; margin-top: 0.5625rem; }
   border-radius: 0.25rem;
   background: #08151a;
   color: #c0d7da;
-  font-family: "SFMono-Regular", Consolas, monospace;
+  font-family: "SFMono-Regular", Consolas, "Noto Serif CJK SC", "Noto Serif SC", monospace;
   font-size: 0.625rem;
   white-space: nowrap;
 }
@@ -1172,7 +1172,7 @@ ul.device-binding-list { display: grid; gap: 0.0625rem; margin-top: 0.5625rem; }
   border: 1px solid rgba(255, 77, 94, 0.7);
   border-radius: 50%;
   color: var(--red);
-  font-family: "SFMono-Regular", Consolas, monospace;
+  font-family: "SFMono-Regular", Consolas, "Noto Serif CJK SC", "Noto Serif SC", monospace;
   font-size: 1.25rem;
 }
 
@@ -1285,7 +1285,7 @@ ul.device-binding-list { display: grid; gap: 0.0625rem; margin-top: 0.5625rem; }
   border-radius: 0.375rem;
   background: rgba(55, 230, 212, 0.07);
   color: var(--cyan);
-  font: 700 0.625rem/1 "SFMono-Regular", Consolas, monospace;
+  font: 700 0.625rem/1 "SFMono-Regular", Consolas, "Noto Serif CJK SC", "Noto Serif SC", monospace;
   letter-spacing: 0.08em;
 }
 
@@ -1414,7 +1414,7 @@ ul.device-binding-list { display: grid; gap: 0.0625rem; margin-top: 0.5625rem; }
   border-radius: 0.3125rem;
   background: #061015;
   color: #b9fff5;
-  font: 0.59375rem/1.55 "SFMono-Regular", Consolas, monospace;
+  font: 0.59375rem/1.55 "SFMono-Regular", Consolas, "Noto Serif CJK SC", "Noto Serif SC", monospace;
   user-select: all;
   overflow-wrap: anywhere;
   white-space: normal;
@@ -1507,7 +1507,7 @@ ul.ai-activity-list { min-height: 5.25rem; max-height: 13rem; overflow-y: auto; 
 .ai-activity:last-child { border-bottom: 0; }
 .ai-activity.is-running { background: rgba(55, 230, 212, 0.04); }
 .ai-activity.is-error { background: rgba(255, 77, 94, 0.06); }
-.ai-activity-time { color: var(--muted-2); font: 0.625rem/1.55 "SFMono-Regular", Consolas, monospace; }
+.ai-activity-time { color: var(--muted-2); font: 0.625rem/1.55 "SFMono-Regular", Consolas, "Noto Serif CJK SC", "Noto Serif SC", monospace; }
 .ai-activity-copy { display: flex; min-width: 0; flex-direction: column; gap: 0.125rem; }
 .ai-activity-copy strong { color: #d9e9ec; font-size: 0.65625rem; font-weight: 650; }
 .ai-activity-copy span { color: var(--muted); font-size: 0.625rem; line-height: 1.45; overflow-wrap: anywhere; }
@@ -1571,13 +1571,13 @@ ul.ai-activity-list { min-height: 5.25rem; max-height: 13rem; overflow-y: auto; 
   border-radius: 0.3125rem;
   background: rgba(55, 230, 212, 0.08);
   color: var(--cyan);
-  font: 700 0.5625rem/1 "SFMono-Regular", Consolas, monospace;
+  font: 700 0.5625rem/1 "SFMono-Regular", Consolas, "Noto Serif CJK SC", "Noto Serif SC", monospace;
 }
 
 .controller-tuning-head > div { display: flex; min-width: 0; flex-direction: column; gap: 0.0625rem; }
 .controller-tuning-head strong { font-size: 0.75rem; }
-.controller-tuning-index { margin-left: auto; color: var(--muted); font: 0.625rem/1.2 "SFMono-Regular", Consolas, monospace; }
-.controller-tuning-value { margin-top: 0.375rem; color: var(--cyan); font: 650 1.25rem/1.15 "SFMono-Regular", Consolas, monospace; }
+.controller-tuning-index { margin-left: auto; color: var(--muted); font: 0.625rem/1.2 "SFMono-Regular", Consolas, "Noto Serif CJK SC", "Noto Serif SC", monospace; }
+.controller-tuning-value { margin-top: 0.375rem; color: var(--cyan); font: 650 1.25rem/1.15 "SFMono-Regular", Consolas, "Noto Serif CJK SC", "Noto Serif SC", monospace; }
 .controller-tuning-help { margin-top: 0.25rem; color: var(--muted); font-size: 0.625rem; line-height: 1.5; }
 
 .gamepad-menu {
@@ -1613,12 +1613,12 @@ ul.ai-activity-list { min-height: 5.25rem; max-height: 13rem; overflow-y: auto; 
   border-radius: 0.3125rem;
   background: rgba(55, 230, 212, 0.08);
   color: var(--cyan);
-  font: 700 0.5625rem/1 "SFMono-Regular", Consolas, monospace;
+  font: 700 0.5625rem/1 "SFMono-Regular", Consolas, "Noto Serif CJK SC", "Noto Serif SC", monospace;
 }
 
 .gamepad-menu-head > div { display: flex; min-width: 0; flex-direction: column; gap: 0.0625rem; }
 .gamepad-menu-head strong { font-size: 0.75rem; }
-.gamepad-menu-index { margin-left: auto; color: var(--muted); font: 0.625rem/1.2 "SFMono-Regular", Consolas, monospace; }
+.gamepad-menu-index { margin-left: auto; color: var(--muted); font: 0.625rem/1.2 "SFMono-Regular", Consolas, "Noto Serif CJK SC", "Noto Serif SC", monospace; }
 .gamepad-menu-list { display: grid; gap: 0.125rem; margin-top: 0.5rem; max-height: min(20rem, 48vh); overflow: hidden; }
 
 .gamepad-menu-item {
@@ -1712,7 +1712,7 @@ ul.ai-activity-list { min-height: 5.25rem; max-height: 13rem; overflow-y: auto; 
   border: 1px solid var(--line);
   border-radius: 999px;
   color: var(--muted);
-  font-family: "SFMono-Regular", Consolas, monospace;
+  font-family: "SFMono-Regular", Consolas, "Noto Serif CJK SC", "Noto Serif SC", monospace;
   font-size: 0.625rem;
   white-space: nowrap;
 }
@@ -1809,7 +1809,7 @@ ul.ai-activity-list { min-height: 5.25rem; max-height: 13rem; overflow-y: auto; 
   border-radius: 0.25rem;
   background: #0d1d24;
   color: #d9e7e9;
-  font-family: "SFMono-Regular", Consolas, monospace;
+  font-family: "SFMono-Regular", Consolas, "Noto Serif CJK SC", "Noto Serif SC", monospace;
   font-size: 0.625rem;
   text-align: center;
 }

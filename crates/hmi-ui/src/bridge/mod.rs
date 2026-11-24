@@ -230,6 +230,25 @@ pub struct AxisGizmo3D {
     pub z: [f32; 2],
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum DeleteFxTarget {
+    TwoD { node: UiNode },
+    ThreeD { node: DeviceNode },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct DeleteFxEffect {
+    pub screen_id: String,
+    pub document_revision: u64,
+    pub targets: Vec<DeleteFxTarget>,
+}
+
+impl DeleteFxEffect {
+    pub fn is_three_d(&self) -> bool {
+        matches!(self.targets.first(), Some(DeleteFxTarget::ThreeD { .. }))
+    }
+}
+
 pub static DOCUMENT_REVISION: GlobalSignal<u64> = Signal::global(|| 1);
 pub static TAG_REVISION: GlobalSignal<u64> = Signal::global(|| 1);
 pub static SELECTED_NODE: GlobalSignal<Option<String>> = Signal::global(|| None);
@@ -248,6 +267,9 @@ pub static RUNTIME_ONLY: GlobalSignal<bool> = Signal::global(|| false);
 pub static GUIDE_OPEN: GlobalSignal<bool> = Signal::global(|| false);
 pub static GAMEPAD_STATUS: GlobalSignal<GamepadStatus> = Signal::global(GamepadStatus::default);
 pub static SELECTED_TAG: GlobalSignal<Option<String>> = Signal::global(|| None);
+pub static DELETE_FX: GlobalSignal<Option<DeleteFxEffect>> = Signal::global(|| None);
+pub static DELETE_FX_REVISION: GlobalSignal<u64> = Signal::global(|| 0);
+pub static DELETE_FX_ENABLED: GlobalSignal<bool> = Signal::global(|| true);
 pub static CONTROLLER_TUNING_HUD: GlobalSignal<Option<ControllerTuningHud>> =
     Signal::global(|| None);
 pub static GAMEPAD_MENU_HUD: GlobalSignal<Option<GamepadMenuHud>> = Signal::global(|| None);
@@ -449,17 +471,93 @@ pub fn tag_revision() -> u64 {
     *TAG_REVISION.read()
 }
 
+pub fn delete_fx_revision() -> u64 {
+    *DELETE_FX_REVISION.read()
+}
+
+pub fn delete_fx_enabled() -> bool {
+    DELETE_FX_ENABLED()
+}
+
+pub fn set_delete_fx_enabled(enabled: bool) {
+    *DELETE_FX_ENABLED.write() = enabled;
+}
+
+pub fn delete_fx() -> Option<DeleteFxEffect> {
+    DELETE_FX()
+}
+
+fn collect_delete_fx(commands: &[EditorCommand]) -> Option<DeleteFxEffect> {
+    if !delete_fx_enabled() {
+        return None;
+    }
+    let screen_id = active_screen()?;
+    let project = project();
+    let screen = project.screen(&screen_id)?;
+    let mut seen = HashSet::new();
+    let mut targets = Vec::new();
+    for command in commands {
+        let EditorCommand::DeleteNode {
+            screen_id: command_screen,
+            node_id,
+        } = command
+        else {
+            continue;
+        };
+        if command_screen != &screen_id || !seen.insert(node_id.clone()) {
+            continue;
+        }
+        match screen {
+            Screen::TwoD { nodes, .. } => {
+                if let Some(node) = nodes.iter().find(|node| &node.id == node_id) {
+                    targets.push(DeleteFxTarget::TwoD { node: node.clone() });
+                }
+            }
+            Screen::ThreeD { nodes, .. } => {
+                if let Some(node) = nodes.iter().find(|node| &node.id == node_id) {
+                    targets.push(DeleteFxTarget::ThreeD { node: node.clone() });
+                }
+            }
+        }
+    }
+    if targets.is_empty() {
+        None
+    } else {
+        Some(DeleteFxEffect {
+            screen_id,
+            document_revision: 0,
+            targets,
+        })
+    }
+}
+
+fn publish_delete_fx(mut effect: Option<DeleteFxEffect>) {
+    let Some(effect) = effect.as_mut() else {
+        return;
+    };
+    if !delete_fx_enabled() {
+        return;
+    }
+    effect.document_revision = document_revision();
+    *DELETE_FX.write() = Some(effect.clone());
+    *DELETE_FX_REVISION.write() += 1;
+}
+
 pub fn execute(command: EditorCommand) -> Result<CommandResult, HmiError> {
+    let delete_fx = collect_delete_fx(std::slice::from_ref(&command));
     let result =
         with_session(|session| session.execute(command)).map_err(HmiError::InvalidCommand)??;
     after_document_change(result.document_revision);
+    publish_delete_fx(delete_fx);
     Ok(result)
 }
 
 pub fn execute_batch(commands: Vec<EditorCommand>) -> Result<BatchCommandResult, HmiError> {
+    let delete_fx = collect_delete_fx(&commands);
     let result = with_session(|session| session.execute_batch(commands))
         .map_err(HmiError::InvalidCommand)??;
     after_document_change(result.document_revision);
+    publish_delete_fx(delete_fx);
     Ok(result)
 }
 
@@ -1438,32 +1536,7 @@ fn add_2d_palette_node(
         "pipe" => (260.0, 24.0, "新管线"),
         _ => (180.0, 120.0, "新设备"),
     };
-    let center = view_center_2d();
-    let mut x = (center[0] - width * 0.5).clamp(0.0, 1600.0 - width);
-    let mut y = (center[1] - height * 0.5).clamp(0.0, 900.0 - height);
-    for _ in 0..20 {
-        let candidate = Rect {
-            x,
-            y,
-            width,
-            height,
-        };
-        let overlaps = nodes.iter().any(|node| {
-            if !node.visible || node.locked {
-                return false;
-            }
-            let other = node.rect;
-            candidate.x < other.right() + 8.0
-                && candidate.right() + 8.0 > other.x
-                && candidate.y < other.bottom() + 8.0
-                && candidate.bottom() + 8.0 > other.y
-        });
-        if !overlaps {
-            break;
-        }
-        x = (x + 24.0).min(1600.0 - width);
-        y = (y + 24.0).min(900.0 - height);
-    }
+    let placement = next_2d_placement(nodes, view_center_2d(), width, height);
 
     let widget = match kind {
         "panel" => Widget2D::Panel {
@@ -1518,12 +1591,7 @@ fn add_2d_palette_node(
     let node = UiNode {
         id: id.clone(),
         name: display_name.into(),
-        rect: Rect {
-            x,
-            y,
-            width,
-            height,
-        },
+        rect: placement,
         rotation_deg: 0.0,
         z,
         visible: true,
@@ -1600,10 +1668,11 @@ fn add_3d_palette_node(
     };
     let id = next_palette_node_id(project, kind);
     let focus = view_focus_3d();
+    let radius = device_footprint_radius(&model, [1.0, 1.0, 1.0]);
     let node = DeviceNode {
         id: id.clone(),
         name: display_name.into(),
-        position: next_3d_position(nodes, focus, y),
+        position: next_3d_position(nodes, focus, y, radius),
         rotation_deg: [0.0, 0.0, 0.0],
         scale: [1.0, 1.0, 1.0],
         visible: true,
@@ -1621,31 +1690,105 @@ fn add_3d_palette_node(
     Ok(id)
 }
 
-fn next_3d_position(nodes: &[DeviceNode], focus: [f32; 3], y: f32) -> [f32; 3] {
-    let mut position = [focus[0], y, focus[2]];
-    for step in 0..24 {
+const CANVAS_WIDTH: f32 = 1600.0;
+const CANVAS_HEIGHT: f32 = 900.0;
+const CANVAS_GAP: f32 = 8.0;
+
+fn next_2d_placement(nodes: &[UiNode], center: [f32; 2], width: f32, height: f32) -> Rect {
+    let max_x = (CANVAS_WIDTH - width).max(0.0);
+    let max_y = (CANVAS_HEIGHT - height).max(0.0);
+    let start_x = (center[0] - width * 0.5).clamp(0.0, max_x);
+    let start_y = (center[1] - height * 0.5).clamp(0.0, max_y);
+    for step in 0..=400 {
         let angle = step as f32 * 2.399_963_2;
         let radius = if step == 0 {
             0.0
         } else {
-            1.1 * (step as f32).sqrt()
+            28.0 * (step as f32).sqrt()
         };
-        let candidate = [
-            focus[0] + radius * angle.cos(),
-            y,
-            focus[2] + radius * angle.sin(),
-        ];
-        let occupied = nodes.iter().any(|node| {
-            let dx = node.position[0] - candidate[0];
-            let dz = node.position[2] - candidate[2];
-            dx * dx + dz * dz < 1.6 * 1.6
-        });
-        if !occupied {
-            position = candidate;
-            break;
+        let candidate = Rect {
+            x: (start_x + radius * angle.cos()).clamp(0.0, max_x),
+            y: (start_y + radius * angle.sin()).clamp(0.0, max_y),
+            width,
+            height,
+        };
+        if !overlaps_nodes_2d(candidate, nodes) {
+            return candidate;
         }
     }
-    position
+    Rect {
+        x: start_x,
+        y: start_y,
+        width,
+        height,
+    }
+}
+
+fn overlaps_nodes_2d(candidate: Rect, nodes: &[UiNode]) -> bool {
+    nodes.iter().any(|node| {
+        if !node.visible {
+            return false;
+        }
+        let other = node.rect;
+        candidate.x < other.right() + CANVAS_GAP
+            && candidate.right() + CANVAS_GAP > other.x
+            && candidate.y < other.bottom() + CANVAS_GAP
+            && candidate.bottom() + CANVAS_GAP > other.y
+    })
+}
+
+const ROOM_HALF_EXTENT: f32 = 14.0;
+const PLACEMENT_GAP: f32 = 0.45;
+
+fn next_3d_position(nodes: &[DeviceNode], focus: [f32; 3], y: f32, new_radius: f32) -> [f32; 3] {
+    let step_size = (new_radius + PLACEMENT_GAP).max(0.6);
+    for step in 0..=160 {
+        let angle = step as f32 * 2.399_963_2;
+        let radius = if step == 0 {
+            0.0
+        } else {
+            step_size * (step as f32).sqrt()
+        };
+        let candidate = [
+            (focus[0] + radius * angle.cos()).clamp(-ROOM_HALF_EXTENT, ROOM_HALF_EXTENT),
+            y,
+            (focus[2] + radius * angle.sin()).clamp(-ROOM_HALF_EXTENT, ROOM_HALF_EXTENT),
+        ];
+        let occupied = nodes.iter().any(|node| {
+            if !node.visible {
+                return false;
+            }
+            let dx = node.position[0] - candidate[0];
+            let dz = node.position[2] - candidate[2];
+            let clearance =
+                new_radius + device_footprint_radius(&node.model, node.scale) + PLACEMENT_GAP;
+            dx * dx + dz * dz < clearance * clearance
+        });
+        if !occupied {
+            return candidate;
+        }
+    }
+    [focus[0], y, focus[2]]
+}
+
+fn device_footprint_radius(model: &DeviceModel, scale: [f32; 3]) -> f32 {
+    let sx = scale[0].abs().max(0.01);
+    let sy = scale[1].abs().max(0.01);
+    let sz = scale[2].abs().max(0.01);
+    let (width, depth) = match model {
+        DeviceModel::Ahu { size, .. }
+        | DeviceModel::Fan { size, .. }
+        | DeviceModel::Pump { size, .. } => (size[0].abs() * sx, size[2].abs() * sz),
+        DeviceModel::Duct {
+            length, diameter, ..
+        }
+        | DeviceModel::Pipe {
+            length, diameter, ..
+        } => (length.abs() * sx, diameter.abs() * sy.max(sz)),
+        DeviceModel::Valve { size, .. } => (size.abs() * sx, size.abs() * sz),
+        DeviceModel::Glb { .. } => (2.4 * sx, 2.4 * sz),
+    };
+    0.5 * (width * width + depth * depth).sqrt().max(0.15)
 }
 
 fn next_palette_node_id(project: &ProjectDocument, prefix: &str) -> String {
@@ -1705,7 +1848,11 @@ pub fn shutdown_for_tests() {
 
 #[cfg(test)]
 mod tests {
-    use super::{GamepadStatus, active_screen, initialize, project, shutdown_for_tests};
+    use super::{
+        GamepadStatus, PLACEMENT_GAP, active_screen, device_footprint_radius, initialize,
+        next_2d_placement, next_3d_position, overlaps_nodes_2d, project, shutdown_for_tests,
+    };
+    use hmi_core::{DeviceModel, DeviceNode, HexColor, Rect, UiNode, Widget2D};
 
     #[test]
     fn initializes_outside_browser_runtime() {
@@ -1739,5 +1886,95 @@ mod tests {
             }
             .is_dualsense()
         );
+    }
+
+    fn panel(id: &str, x: f32, y: f32) -> UiNode {
+        UiNode {
+            id: id.to_string(),
+            name: id.to_string(),
+            rect: Rect {
+                x,
+                y,
+                width: 420.0,
+                height: 260.0,
+            },
+            rotation_deg: 0.0,
+            z: 1,
+            visible: true,
+            locked: false,
+            widget: Widget2D::Panel {
+                fill: HexColor("#101e27".to_string()),
+                stroke: HexColor("#2a4b58".to_string()),
+                stroke_width: 1.0,
+            },
+            bindings: Vec::new(),
+        }
+    }
+
+    fn ahu(id: &str, x: f32, z: f32) -> DeviceNode {
+        DeviceNode {
+            id: id.to_string(),
+            name: id.to_string(),
+            position: [x, 1.4, z],
+            rotation_deg: [0.0, 0.0, 0.0],
+            scale: [1.0, 1.0, 1.0],
+            visible: true,
+            locked: false,
+            label: None,
+            model: DeviceModel::Ahu {
+                size: [4.0, 2.8, 2.2],
+                color: HexColor("#23434d".to_string()),
+            },
+            bindings: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn new_2d_nodes_are_staggered_instead_of_overlapping() {
+        let mut nodes = vec![panel("node.panel.0", 500.0, 300.0)];
+        for index in 1..6 {
+            let placement = next_2d_placement(&nodes, [800.0, 450.0], 420.0, 260.0);
+            assert!(
+                !overlaps_nodes_2d(placement, &nodes),
+                "new panel {index} overlaps: {placement:?}"
+            );
+            assert!(placement.right() <= 1600.0);
+            assert!(placement.bottom() <= 900.0);
+            nodes.push(panel(
+                &format!("node.panel.{index}"),
+                placement.x,
+                placement.y,
+            ));
+        }
+    }
+
+    #[test]
+    fn new_3d_devices_clear_existing_footprints() {
+        let model = DeviceModel::Ahu {
+            size: [4.0, 2.8, 2.2],
+            color: HexColor("#23434d".to_string()),
+        };
+        let radius = device_footprint_radius(&model, [1.0, 1.0, 1.0]);
+        let mut nodes = vec![ahu("node.3d.ahu.0", 0.0, 0.0)];
+        for index in 1..5 {
+            let position = next_3d_position(&nodes, [0.0, 1.4, 0.0], 1.4, radius);
+            for existing in &nodes {
+                let dx = existing.position[0] - position[0];
+                let dz = existing.position[2] - position[2];
+                let clearance = radius
+                    + device_footprint_radius(&existing.model, existing.scale)
+                    + PLACEMENT_GAP;
+                assert!(
+                    dx * dx + dz * dz >= clearance * clearance - 1e-4,
+                    "new AHU {index} overlaps {}: {position:?}",
+                    existing.id
+                );
+            }
+            nodes.push(ahu(
+                &format!("node.3d.ahu.{index}"),
+                position[0],
+                position[2],
+            ));
+        }
     }
 }

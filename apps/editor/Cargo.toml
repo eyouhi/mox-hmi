@@ -46,6 +46,7 @@ mox-hmi-control = { path = "../control" }
 mox-hmi-studio = { path = "../studio" }
 mox-hmi-ui = { path = "../../crates/hmi-ui" }
 peniko = "0.6.1"
+parley = { version = "0.12", features = ["system"] }
 serde.workspace = true
 serde_json.workspace = true
 tokio = { version = "1", features = ["net", "rt-multi-thread", "sync", "time"] }

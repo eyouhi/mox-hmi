@@ -5,8 +5,6 @@ edition.workspace = true
 publish = false
 
 [dependencies]
-fontoxide-subset = "0.1.0"
-fontoxide-ttlib = { version = "0.1.0", default-features = false }
 headless_chrome = "1.0.22"
 serde_json.workspace = true
 ttf-parser = "0.25.1"

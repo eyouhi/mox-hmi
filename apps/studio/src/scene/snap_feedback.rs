@@ -37,6 +37,20 @@ pub fn trigger() {
     }
 }
 
+pub fn chomp() {
+    #[cfg(target_arch = "wasm32")]
+    {
+        play_chomp_sound();
+        vibrate();
+        gamepad_haptic();
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        crate::bridge::native_haptic();
+        GAMEPAD_RUMBLE_PENDING.store(true, Ordering::Relaxed);
+    }
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 pub fn take_gamepad_rumble() -> bool {
     GAMEPAD_RUMBLE_PENDING.swap(false, Ordering::Relaxed)
@@ -97,6 +111,39 @@ fn play_snap_sound() {
     let _ = gain_node.connect_with_audio_node(destination_node);
     let _ = oscillator.start_with_when(now);
     let _ = oscillator.stop_with_when(now + 0.04);
+}
+
+#[cfg(target_arch = "wasm32")]
+fn play_chomp_sound() {
+    let Some(context) = audio_context() else {
+        return;
+    };
+    let Ok(oscillator) = context.create_oscillator() else {
+        return;
+    };
+    let Ok(gain) = context.create_gain() else {
+        return;
+    };
+
+    let now = context.current_time();
+    oscillator.set_type(OscillatorType::Square);
+    let frequency = oscillator.frequency();
+    let _ = frequency.set_value_at_time(210.0, now);
+    let _ = frequency.exponential_ramp_to_value_at_time(105.0, now + 0.065);
+
+    let envelope = gain.gain();
+    let _ = envelope.set_value_at_time(0.0001, now);
+    let _ = envelope.exponential_ramp_to_value_at_time(0.028, now + 0.004);
+    let _ = envelope.exponential_ramp_to_value_at_time(0.0001, now + 0.07);
+
+    let destination = context.destination();
+    let oscillator_node: &AudioNode = oscillator.unchecked_ref();
+    let gain_node: &AudioNode = gain.unchecked_ref();
+    let destination_node: &AudioNode = destination.unchecked_ref();
+    let _ = oscillator_node.connect_with_audio_node(gain_node);
+    let _ = gain_node.connect_with_audio_node(destination_node);
+    let _ = oscillator.start_with_when(now);
+    let _ = oscillator.stop_with_when(now + 0.08);
 }
 
 #[cfg(target_arch = "wasm32")]

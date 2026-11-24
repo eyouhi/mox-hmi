@@ -1,5 +1,6 @@
 pub mod assets;
 pub mod controller_tuning;
+pub mod delete_fx;
 pub mod gamepad_haptics;
 pub mod gamepad_menu;
 pub mod input;
@@ -20,6 +21,11 @@ use shader_compat::ShaderCompatPlugin;
 
 #[derive(Default)]
 pub(crate) struct SimulationAccumulator(f64);
+
+#[derive(Message, Debug, Clone, Copy, PartialEq)]
+pub struct CanvasPinch {
+    pub delta: f32,
+}
 
 #[cfg(target_arch = "wasm32")]
 pub fn start_bevy() {

@@ -1,8 +1,6 @@
 use bevy::prelude::*;
 use hmi_core::HexColor;
 
-const FONT_BYTES: &[u8] = include_bytes!("../../public/assets/fonts/NotoSansSC-Subset.otf");
-
 #[derive(Resource, Clone)]
 pub struct HmiFont(pub Option<Handle<Font>>);
 
@@ -16,8 +14,8 @@ impl HmiFont {
     }
 }
 
-pub fn load_hmi_font(mut commands: Commands, mut fonts: ResMut<Assets<Font>>) {
-    let handle = fonts.add(Font::from_bytes(FONT_BYTES.to_vec()));
+pub fn load_hmi_font(mut commands: Commands, asset_server: Res<AssetServer>) {
+    let handle = asset_server.load("fonts/NotoSerifCJKsc-Regular.otf");
     commands.insert_resource(HmiFont(Some(handle)));
 }
 
