@@ -759,7 +759,7 @@ fn Widget2DEditor(screen_id: String, node: UiNode) -> Element {
             thickness,
             color,
         } => rsx! {
-            p { class: "kind-note", "画布中拖动圆形折点；拖动端点靠近设备会吸附到设备边缘，Shift 锁定水平/垂直方向。" }
+            p { class: "kind-note", "画布中拖动圆形折点；相邻线段接近水平/垂直时自动吸附，端点靠近设备会吸附到设备边缘，Shift 锁定指针水平/垂直方向。" }
             TextField {
                 label: "折点 x,y;x,y".to_string(),
                 test_id: "widget-points".to_string(),

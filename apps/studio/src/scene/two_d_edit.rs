@@ -14,6 +14,8 @@ use hmi_core::{
 
 const CENTER_SNAP_SCREEN_PX: f32 = 8.0;
 const POINT_SNAP_SCREEN_PX: f32 = 10.0;
+const PIPE_AXIS_SNAP_DEGREES: f32 = 7.0;
+const PIPE_AXIS_SNAP_MIN_SCREEN_PX: f32 = 4.0;
 const PIPE_HANDLE_SCREEN_PX: f32 = 9.0;
 const DRAG_ACTIVATION_SCREEN_PX: f32 = 3.0;
 const SNAP_FEEDBACK_COOLDOWN_SECS: f64 = 0.07;
@@ -120,15 +122,59 @@ struct PointSnap {
     x: Option<f32>,
     y: Option<f32>,
     device_id: Option<String>,
+    axis: PipeAxisSnap,
 }
 
 impl PointSnap {
     fn key(&self) -> PointSnapKey {
-        (self.x, self.y, self.device_id.clone())
+        PointSnapKey {
+            center_x: self.x,
+            center_y: self.y,
+            device_id: self.device_id.clone(),
+            axis: self.axis.clone(),
+        }
+    }
+
+    fn engaged(&self) -> bool {
+        self.x.is_some() || self.y.is_some() || self.device_id.is_some() || self.axis.engaged()
     }
 }
 
-type PointSnapKey = (Option<f32>, Option<f32>, Option<String>);
+#[derive(Debug, Clone, Default, PartialEq)]
+struct PointSnapKey {
+    center_x: Option<f32>,
+    center_y: Option<f32>,
+    device_id: Option<String>,
+    axis: PipeAxisSnap,
+}
+
+impl PointSnapKey {
+    fn engaged(&self) -> bool {
+        self.center_x.is_some()
+            || self.center_y.is_some()
+            || self.device_id.is_some()
+            || self.axis.engaged()
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq)]
+struct PipeAxisSnap {
+    horizontal_from: Option<[f32; 2]>,
+    vertical_from: Option<[f32; 2]>,
+}
+
+impl PipeAxisSnap {
+    fn engaged(&self) -> bool {
+        self.horizontal_from.is_some() || self.vertical_from.is_some()
+    }
+
+    fn apply(&self, raw: [f32; 2]) -> [f32; 2] {
+        [
+            self.vertical_from.map_or(raw[0], |anchor| anchor[0]),
+            self.horizontal_from.map_or(raw[1], |anchor| anchor[1]),
+        ]
+    }
+}
 
 #[derive(Debug, Clone, Default)]
 struct CenterSnapTargets {
@@ -402,15 +448,63 @@ fn nearest_axis(value: f32, targets: &[f32], tolerance: f32) -> Option<f32> {
         .map(|(_, target)| target)
 }
 
+fn pipe_axis_snap(
+    node: &UiNode,
+    index: usize,
+    raw: [f32; 2],
+    min_segment_length: f32,
+) -> PipeAxisSnap {
+    let Some(points) = pipe_points(node) else {
+        return PipeAxisSnap::default();
+    };
+    let angle_tolerance = PIPE_AXIS_SNAP_DEGREES.to_radians();
+    let mut horizontal: Option<(f32, [f32; 2])> = None;
+    let mut vertical: Option<(f32, [f32; 2])> = None;
+    for neighbor in [
+        index.checked_sub(1),
+        (index + 1 < points.len()).then_some(index + 1),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        let anchor = node_local_to_design(node, points[neighbor]);
+        let delta = [raw[0] - anchor[0], raw[1] - anchor[1]];
+        if delta[0].hypot(delta[1]) < min_segment_length {
+            continue;
+        }
+        let angle = delta[1].atan2(delta[0]).abs();
+        let horizontal_deviation = angle.min(std::f32::consts::PI - angle);
+        let vertical_deviation = (std::f32::consts::FRAC_PI_2 - angle).abs();
+        if horizontal_deviation <= angle_tolerance
+            && horizontal.is_none_or(|(current, _)| horizontal_deviation < current)
+        {
+            horizontal = Some((horizontal_deviation, anchor));
+        }
+        if vertical_deviation <= angle_tolerance
+            && vertical.is_none_or(|(current, _)| vertical_deviation < current)
+        {
+            vertical = Some((vertical_deviation, anchor));
+        }
+    }
+    PipeAxisSnap {
+        horizontal_from: horizontal.map(|(_, anchor)| anchor),
+        vertical_from: vertical.map(|(_, anchor)| anchor),
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
 fn snap_pipe_point(
     node: &UiNode,
-    _index: usize,
+    index: usize,
     raw: [f32; 2],
     is_endpoint: bool,
     nodes: &[UiNode],
     targets: &CenterSnapTargets,
-    tolerance: f32,
+    zoom: f32,
+    allow_axis_snap: bool,
 ) -> PointSnap {
+    let zoom = zoom.max(f32::EPSILON);
+    let tolerance = POINT_SNAP_SCREEN_PX / zoom;
     let raw = [
         raw[0].clamp(0.0, DESIGN_SIZE[0] as f32),
         raw[1].clamp(0.0, DESIGN_SIZE[1] as f32),
@@ -443,17 +537,39 @@ fn snap_pipe_point(
                 x: None,
                 y: None,
                 device_id: Some(device_id),
+                axis: PipeAxisSnap::default(),
             };
         }
     }
 
-    let x = nearest_axis(raw[0], &targets.x, tolerance);
-    let y = nearest_axis(raw[1], &targets.y, tolerance);
+    let axis = if allow_axis_snap {
+        pipe_axis_snap(node, index, raw, PIPE_AXIS_SNAP_MIN_SCREEN_PX / zoom)
+    } else {
+        PipeAxisSnap::default()
+    };
+    let mut point = axis.apply(raw);
+    let x = if axis.vertical_from.is_some() {
+        None
+    } else {
+        nearest_axis(raw[0], &targets.x, tolerance)
+    };
+    let y = if axis.horizontal_from.is_some() {
+        None
+    } else {
+        nearest_axis(raw[1], &targets.y, tolerance)
+    };
+    if let Some(x) = x {
+        point[0] = x;
+    }
+    if let Some(y) = y {
+        point[1] = y;
+    }
     PointSnap {
-        point: [x.unwrap_or(raw[0]), y.unwrap_or(raw[1])],
+        point,
         x,
         y,
         device_id: None,
+        axis,
     }
 }
 
@@ -822,8 +938,9 @@ fn begin_left_press(
                         x: None,
                         y: None,
                         device_id: None,
+                        axis: PipeAxisSnap::default(),
                     },
-                    last_snap: (None, None, None),
+                    last_snap: PointSnapKey::default(),
                     last_feedback_s: f64::NEG_INFINITY,
                     targets,
                 });
@@ -1009,7 +1126,8 @@ fn update_active_drag(
                 is_endpoint,
                 nodes,
                 targets,
-                POINT_SNAP_SCREEN_PX / zoom.max(f32::EPSILON),
+                zoom,
+                !axis_lock,
             );
             if let Widget2D::Pipe { points, .. } = &mut preview.widget
                 && let Some(target) = points.get_mut(*index)
@@ -1018,7 +1136,7 @@ fn update_active_drag(
             }
             let key = snap.key();
             if key != *last_snap
-                && (key.0.is_some() || key.1.is_some() || key.2.is_some())
+                && key.engaged()
                 && now - *last_feedback_s >= SNAP_FEEDBACK_COOLDOWN_SECS
             {
                 super::snap_feedback::trigger();
@@ -2080,8 +2198,24 @@ fn draw_pipe_snap(gizmos: &mut Gizmos, edit_state: &TwoDEditState, nodes: &[UiNo
             guide,
         );
     }
-    if snap.x.is_some() || snap.y.is_some() || snap.device_id.is_some() {
-        let point = design_to_world(snap.point, DESIGN_SIZE);
+    let point = design_to_world(snap.point, DESIGN_SIZE);
+    if let Some(anchor) = snap.axis.horizontal_from {
+        let anchor = design_to_world(anchor, DESIGN_SIZE);
+        gizmos.line_2d(
+            Vec2::new(anchor[0], anchor[1]),
+            Vec2::new(point[0], point[1]),
+            guide,
+        );
+    }
+    if let Some(anchor) = snap.axis.vertical_from {
+        let anchor = design_to_world(anchor, DESIGN_SIZE);
+        gizmos.line_2d(
+            Vec2::new(anchor[0], anchor[1]),
+            Vec2::new(point[0], point[1]),
+            guide,
+        );
+    }
+    if snap.engaged() {
         gizmos.circle_2d(
             Vec2::new(point[0], point[1]),
             9.0 / zoom.max(f32::EPSILON),
@@ -2444,7 +2578,7 @@ mod tests {
         );
         let nodes = [pipe.clone(), device];
         let targets = CenterSnapTargets::for_nodes(&nodes, std::slice::from_ref(&pipe.id));
-        let snapped = snap_pipe_point(&pipe, 1, [316.0, 220.0], true, &nodes, &targets, 10.0);
+        let snapped = snap_pipe_point(&pipe, 1, [316.0, 220.0], true, &nodes, &targets, 1.0, false);
         assert_eq!(snapped.device_id.as_deref(), Some("fan"));
         assert_eq!(snapped.point, [320.0, 220.0]);
     }
@@ -2454,9 +2588,70 @@ mod tests {
         let pipe = pipe_node(vec![[0.0, 20.0], [100.0, 40.0], [180.0, 20.0]]);
         let nodes = [pipe.clone()];
         let targets = CenterSnapTargets::for_nodes(&nodes, std::slice::from_ref(&pipe.id));
-        let snapped = snap_pipe_point(&pipe, 1, [794.0, 350.0], false, &nodes, &targets, 10.0);
+        let snapped = snap_pipe_point(
+            &pipe,
+            1,
+            [794.0, 350.0],
+            false,
+            &nodes,
+            &targets,
+            1.0,
+            false,
+        );
         assert_eq!(snapped.point[0], 800.0);
         assert_eq!(snapped.x, Some(800.0));
         assert_eq!(snapped.y, None);
+    }
+
+    #[test]
+    fn pipe_point_snaps_segment_to_horizontal() {
+        let pipe = pipe_node(vec![[0.0, 20.0], [180.0, 20.0]]);
+        let nodes = [pipe.clone()];
+        let targets = CenterSnapTargets::for_nodes(&nodes, std::slice::from_ref(&pipe.id));
+        let snapped = snap_pipe_point(&pipe, 1, [300.0, 128.0], true, &nodes, &targets, 1.0, true);
+        assert_eq!(snapped.point, [300.0, 120.0]);
+        assert!(snapped.axis.horizontal_from.is_some());
+        assert!(snapped.engaged());
+    }
+
+    #[test]
+    fn pipe_point_snaps_segment_to_vertical() {
+        let pipe = pipe_node(vec![[0.0, 20.0], [180.0, 20.0]]);
+        let nodes = [pipe.clone()];
+        let targets = CenterSnapTargets::for_nodes(&nodes, std::slice::from_ref(&pipe.id));
+        let snapped = snap_pipe_point(&pipe, 0, [288.0, 300.0], true, &nodes, &targets, 1.0, true);
+        assert_eq!(snapped.point, [280.0, 300.0]);
+        assert!(snapped.axis.vertical_from.is_some());
+    }
+
+    #[test]
+    fn interior_pipe_point_can_snap_both_axis_segments() {
+        let pipe = pipe_node(vec![[0.0, 20.0], [100.0, 20.0], [100.0, 80.0]]);
+        let nodes = [pipe.clone()];
+        let targets = CenterSnapTargets::for_nodes(&nodes, std::slice::from_ref(&pipe.id));
+        let snapped = snap_pipe_point(&pipe, 1, [206.0, 127.0], false, &nodes, &targets, 1.0, true);
+        assert_eq!(snapped.point, [200.0, 120.0]);
+        assert!(snapped.axis.horizontal_from.is_some());
+        assert!(snapped.axis.vertical_from.is_some());
+    }
+
+    #[test]
+    fn pipe_axis_snap_releases_outside_angle_tolerance() {
+        let pipe = pipe_node(vec![[0.0, 20.0], [180.0, 20.0]]);
+        let nodes = [pipe.clone()];
+        let targets = CenterSnapTargets::for_nodes(&nodes, std::slice::from_ref(&pipe.id));
+        let snapped = snap_pipe_point(&pipe, 1, [300.0, 180.0], true, &nodes, &targets, 1.0, true);
+        assert_eq!(snapped.point, [300.0, 180.0]);
+        assert!(!snapped.axis.engaged());
+    }
+
+    #[test]
+    fn explicit_axis_lock_disables_automatic_angle_snap() {
+        let pipe = pipe_node(vec![[0.0, 20.0], [180.0, 20.0]]);
+        let nodes = [pipe.clone()];
+        let targets = CenterSnapTargets::for_nodes(&nodes, std::slice::from_ref(&pipe.id));
+        let snapped = snap_pipe_point(&pipe, 1, [300.0, 128.0], true, &nodes, &targets, 1.0, false);
+        assert_eq!(snapped.point, [300.0, 128.0]);
+        assert!(!snapped.axis.engaged());
     }
 }

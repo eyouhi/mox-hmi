@@ -196,7 +196,7 @@ fn GuideStart() -> Element {
             }
             div { class: "guide-callout is-soft",
                 strong { "对齐与震动反馈" }
-                p { "2D 拖动、键盘轻推和手柄移动都会吸附到画板/节点中心线；管线端点还会吸附设备边缘。3D 地面拖动会吸附 X=0 / Y=0 垂直中心面，属性检查器还可一键对齐到 X/Y/Z 三个中心面。吸附瞬间播放轻提示音；macOS 原生编辑器优先通过 CoreHaptics 触发 DualSense 短振，同时保留触控板线性马达反馈；Web 端则尝试 DualSense vibrationActuator。" }
+                p { "2D 拖动、键盘轻推和手柄移动都会吸附到画板/节点中心线；管线折点靠近水平/垂直方向时会自动吸附，端点还会吸附设备边缘。3D 地面拖动会吸附 X=0 / Y=0 垂直中心面，属性检查器还可一键对齐到 X/Y/Z 三个中心面。吸附瞬间播放轻提示音；macOS 原生编辑器优先通过 CoreHaptics 触发 DualSense 短振，同时保留触控板线性马达反馈；Web 端则尝试 DualSense vibrationActuator。" }
             }
             div { class: "guide-callout is-soft",
                 strong { "标准快捷键与输入优先级" }
@@ -225,7 +225,7 @@ fn GuideTwoD() -> Element {
                     tr { td { "Option/Alt + 拖拽" } td { "区域框选，可在节点上开始；与选框相交的可见节点会被选中" } }
                     tr { td { "⇧ + Option/Alt + 拖拽" } td { "追加框选，不清除已有选择" } }
                     tr { td { "拖拽角点" } td { "缩放（仅单选时显示角点）" } }
-                    tr { td { "单选管线后拖拽圆形折点" } td { "直接调整该折点；拖动端点靠近设备时吸附到最近的设备边缘" } }
+                    tr { td { "单选管线后拖拽圆形折点" } td { "直接调整该折点；相邻线段进入约 7° 的水平/垂直范围时自动吸附，端点靠近设备时吸附到最近的设备边缘" } }
                     tr { td { "拖动折点时按住 Shift" } td { "锁定水平或垂直拖动方向" } }
                     tr { td { "中键拖拽 / Space + 左键拖拽" } td { "平移画布" } }
                     tr { td { "鼠标滚轮" } td { "以光标为中心缩放" } }
@@ -280,7 +280,7 @@ fn GuideTwoD() -> Element {
                     tr { td { "参数模式：Circle ○" } td { "退出参数模式，不取消选择" } }
                 }
             }
-            p { class: "guide-note", "管线的每个折点都可直接拖动，端点吸附设备后显示琥珀色高亮；拖任意折点仍会吸附画布和其他节点中心线。空白处普通拖拽用于平移画布，框选和任意组合多选使用 Option/Alt + 鼠标或触控板拖拽；手柄可在 Options → 编辑所选中全选，再用 L1/R1 单选浏览。连接方式：在 macOS 蓝牙设置中配对 DualSense，按一下 PS 键唤醒，再按任意键；识别后顶栏显示“DualSense”。" }
+            p { class: "guide-note", "管线的每个折点都可直接拖动；相邻线段接近水平/垂直时会自动吸附并显示琥珀色局部引导线，端点吸附设备后显示琥珀色高亮。拖任意折点仍会吸附画布和其他节点中心线。空白处普通拖拽用于平移画布，框选和任意组合多选使用 Option/Alt + 鼠标或触控板拖拽；手柄可在 Options → 编辑所选中全选，再用 L1/R1 单选浏览。连接方式：在 macOS 蓝牙设置中配对 DualSense，按一下 PS 键唤醒，再按任意键；识别后顶栏显示“DualSense”。" }
         }
     }
 }
