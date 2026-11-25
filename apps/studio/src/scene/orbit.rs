@@ -1,13 +1,17 @@
 use super::CanvasPinch;
 use super::input::{self, GamepadState, PadButton};
 use super::plugin::{CachedProject, HmiCameras};
-use super::three_d::HoveredThreeD;
+use super::three_d::{HoveredThreeD, THREE_D_ROOM_SIZE};
 use super::three_d_edit::ThreeDEditState;
 use bevy::input::mouse::MouseScrollUnit;
 use bevy::input::mouse::{AccumulatedMouseMotion, MouseWheel};
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 use hmi_core::{DeviceModel, Screen};
+
+const THREE_D_FOCUS_EDGE_INSET: f32 = 4.0;
+const THREE_D_FOCUS_MIN_HEIGHT: f32 = 0.5;
+const THREE_D_FOCUS_MAX_HEIGHT: f32 = 6.0;
 
 #[derive(Resource, Debug, Clone)]
 pub struct OrbitCamera {
@@ -42,6 +46,16 @@ impl OrbitCamera {
                 horizontal * self.yaw.cos(),
             );
         transform.look_at(self.focus, Vec3::Y);
+    }
+
+    fn clamp_focus(&mut self) {
+        let horizontal_limit = THREE_D_ROOM_SIZE * 0.5 - THREE_D_FOCUS_EDGE_INSET;
+        self.focus.x = self.focus.x.clamp(-horizontal_limit, horizontal_limit);
+        self.focus.y = self
+            .focus
+            .y
+            .clamp(THREE_D_FOCUS_MIN_HEIGHT, THREE_D_FOCUS_MAX_HEIGHT);
+        self.focus.z = self.focus.z.clamp(-horizontal_limit, horizontal_limit);
     }
 }
 
@@ -135,6 +149,7 @@ pub fn orbit_system(
             &transform,
         );
         apply_orbit_pinch(&mut pinch_events, pointer_on_canvas, &mut orbit);
+        orbit.clamp_focus();
         orbit.apply(&mut transform);
         publish_axis_gizmo(&transform);
     }
@@ -369,8 +384,8 @@ fn model_span(model: &DeviceModel) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::{
-        OrbitCamera, apply_orbit_pinch_delta, apply_right_stick_orbit, view_orbit_intent,
-        wheel_pan_focus_delta,
+        OrbitCamera, THREE_D_FOCUS_MAX_HEIGHT, THREE_D_FOCUS_MIN_HEIGHT, THREE_D_ROOM_SIZE,
+        apply_orbit_pinch_delta, apply_right_stick_orbit, view_orbit_intent, wheel_pan_focus_delta,
     };
     use bevy::prelude::{Vec2, Vec3};
 
@@ -421,5 +436,35 @@ mod tests {
         assert!(!view_orbit_intent(true, false));
         assert!(!view_orbit_intent(false, true));
         assert!(!view_orbit_intent(true, true));
+    }
+
+    #[test]
+    fn orbit_focus_stays_inside_the_room() {
+        let mut orbit = OrbitCamera::default();
+        orbit.focus = Vec3::new(100.0, 100.0, -100.0);
+
+        orbit.clamp_focus();
+
+        let horizontal_limit = THREE_D_ROOM_SIZE * 0.5 - 4.0;
+        assert_eq!(
+            orbit.focus,
+            Vec3::new(
+                horizontal_limit,
+                THREE_D_FOCUS_MAX_HEIGHT,
+                -horizontal_limit
+            )
+        );
+
+        orbit.focus = Vec3::new(-100.0, -100.0, 100.0);
+        orbit.clamp_focus();
+
+        assert_eq!(
+            orbit.focus,
+            Vec3::new(
+                -horizontal_limit,
+                THREE_D_FOCUS_MIN_HEIGHT,
+                horizontal_limit
+            )
+        );
     }
 }

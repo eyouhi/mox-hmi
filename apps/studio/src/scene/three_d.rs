@@ -11,6 +11,8 @@ use bevy::world_serialization::prelude::{WorldAsset, WorldAssetRoot};
 use hmi_core::{DeviceModel, DeviceNode, HexColor, Screen};
 use std::collections::HashMap;
 
+pub(crate) const THREE_D_ROOM_SIZE: f32 = 32.0;
+
 #[derive(Component, Debug, Clone)]
 pub struct HmiPickable {
     pub node_id: String,
@@ -98,7 +100,13 @@ fn spawn_room(
     });
     commands.spawn((
         HmiScreenContent,
-        Mesh3d(meshes.add(Plane3d::default().mesh().size(32.0, 32.0))),
+        Mesh3d(
+            meshes.add(
+                Plane3d::default()
+                    .mesh()
+                    .size(THREE_D_ROOM_SIZE, THREE_D_ROOM_SIZE),
+            ),
+        ),
         MeshMaterial3d(floor),
         Transform::from_xyz(0.0, -0.01, 0.0),
         Pickable::IGNORE,

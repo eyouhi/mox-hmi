@@ -891,6 +891,7 @@ fn update_pan(
             *last_world = current;
         }
     }
+    clamp_two_d_camera_view(transform);
     true
 }
 
@@ -1292,6 +1293,7 @@ fn apply_wheel_2d(
             transform.translation.y += offset.y;
         }
     }
+    clamp_two_d_camera_view(transform);
 }
 
 fn apply_pinch_2d(
@@ -1484,6 +1486,7 @@ fn apply_gamepad_2d(
             (zoom * 1.8 * dt).exp(),
         );
     }
+    clamp_two_d_camera_view(transform);
     for (node_id, rect) in
         gamepad_edit_2d(cached, nodes, pad, edit_state, dt, now, camera_state.zoom)
     {
@@ -1605,6 +1608,7 @@ fn apply_zoom_2d(
     if let Projection::Orthographic(orthographic) = projection {
         orthographic.scale = 1.0 / new_zoom;
     }
+    clamp_two_d_camera_view(transform);
 }
 
 fn frame_selected_2d(
@@ -1634,6 +1638,13 @@ fn frame_selected_2d(
     let world = design_to_world(center, DESIGN_SIZE);
     transform.translation.x = world[0];
     transform.translation.y = world[1];
+    clamp_two_d_camera_view(transform);
+}
+
+fn clamp_two_d_camera_view(transform: &mut Transform) {
+    let limit = Vec2::new(DESIGN_SIZE[0] as f32, DESIGN_SIZE[1] as f32) * 0.5;
+    transform.translation.x = transform.translation.x.clamp(-limit.x, limit.x);
+    transform.translation.y = transform.translation.y.clamp(-limit.y, limit.y);
 }
 
 fn apply_rect_preview(root_query: &mut TwoDRootQuery<'_, '_>, node_id: &str, rect: Rect) {
@@ -2344,9 +2355,9 @@ pub fn publish_view_state(
 #[cfg(test)]
 mod tests {
     use super::{
-        CenterSnapTargets, DragState, TwoDEditState, drag_activation_reached, fine_nudge_snap,
-        node_local_to_design, normalized_pipe_node, snap_pipe_point, update_pan,
-        wheel_pan_translation,
+        CenterSnapTargets, DragState, TwoDEditState, clamp_two_d_camera_view,
+        drag_activation_reached, fine_nudge_snap, node_local_to_design, normalized_pipe_node,
+        snap_pipe_point, update_pan, wheel_pan_translation,
     };
     use bevy::input::{ButtonInput, mouse::MouseButton};
     use bevy::prelude::{KeyCode, Transform, Vec2};
@@ -2462,6 +2473,16 @@ mod tests {
             &mut edit_state,
         ));
         assert!(matches!(edit_state.drag, Some(DragState::Marquee { .. })));
+    }
+
+    #[test]
+    fn two_d_camera_stays_within_the_design_canvas() {
+        let mut transform = Transform::from_xyz(2_000.0, -2_000.0, 0.0);
+
+        clamp_two_d_camera_view(&mut transform);
+
+        assert_eq!(transform.translation.x, 800.0);
+        assert_eq!(transform.translation.y, -450.0);
     }
 
     #[test]
