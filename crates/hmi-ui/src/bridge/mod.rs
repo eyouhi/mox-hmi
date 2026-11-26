@@ -6,14 +6,12 @@ use hmi_core::{
     display_axis_to_scene, export_filename, from_json, to_json, unique_node_id,
 };
 #[cfg(not(target_arch = "wasm32"))]
-use std::sync::{
-    OnceLock,
-    atomic::{AtomicBool, Ordering},
-};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::{
     cell::{Cell, RefCell},
-    collections::HashSet,
+    collections::{BTreeMap, HashSet},
     rc::Rc,
+    sync::OnceLock,
 };
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -24,6 +22,7 @@ static NATIVE_UI_CAPTURES_POINTER: AtomicBool = AtomicBool::new(false);
 static NATIVE_POINTER_ON_CANVAS: AtomicBool = AtomicBool::new(false);
 #[cfg(not(target_arch = "wasm32"))]
 static NATIVE_HAPTIC_HANDLER: OnceLock<fn()> = OnceLock::new();
+static REMOTE_TAG_WRITER: OnceLock<fn(String, TagValue)> = OnceLock::new();
 
 pub mod storage;
 
@@ -276,6 +275,8 @@ pub static GAMEPAD_MENU_HUD: GlobalSignal<Option<GamepadMenuHud>> = Signal::glob
 pub static GUIDE_SECTION: GlobalSignal<GuideSection> = Signal::global(GuideSection::default);
 pub static GUIDE_SCROLL_REQUEST: GlobalSignal<GuideScrollRequest> =
     Signal::global(GuideScrollRequest::default);
+pub static REMOTE_RUNNER_ACTIVE: GlobalSignal<bool> = Signal::global(|| false);
+pub static REMOTE_RUNNER_CONNECTED: GlobalSignal<bool> = Signal::global(|| false);
 
 thread_local! {
     static SESSION: RefCell<Option<Rc<RefCell<EditorSession>>>> = const { RefCell::new(None) };
@@ -377,6 +378,68 @@ pub fn initialize() -> Result<(), String> {
         }
         Ok(())
     })
+}
+
+pub fn initialize_remote(
+    project: ProjectDocument,
+    initial_values: BTreeMap<String, TagValue>,
+    initial_revision: u64,
+) -> Result<(), String> {
+    SESSION.with(|slot| {
+        if slot.borrow().is_some() {
+            publish_session_state();
+            return Ok(());
+        }
+        let session = EditorSession::new(project).map_err(|errors| {
+            errors
+                .into_iter()
+                .map(|error| error.to_string())
+                .collect::<Vec<_>>()
+                .join("; ")
+        })?;
+        let startup = session.project().startup_screen.clone();
+        *slot.borrow_mut() = Some(Rc::new(RefCell::new(session)));
+        *DOCUMENT_REVISION.write() = 1;
+        *TAG_REVISION.write() = 1;
+        *ACTIVE_SCREEN.write() = Some(startup);
+        *RUNTIME_ONLY.write() = true;
+        *WORKSPACE_MODE.write() = WorkspaceMode::Run;
+        *SAVE_STATUS.write() = SaveStatus::Saved;
+        *REMOTE_RUNNER_ACTIVE.write() = true;
+        *REMOTE_RUNNER_CONNECTED.write() = true;
+        let _ =
+            with_session(|session| session.replace_tag_snapshot(initial_values, initial_revision));
+        set_selection_signals(Vec::new());
+        Ok(())
+    })
+}
+
+pub fn remote_runner_active() -> bool {
+    REMOTE_RUNNER_ACTIVE()
+}
+
+pub fn remote_runner_connected() -> bool {
+    REMOTE_RUNNER_CONNECTED()
+}
+
+pub fn set_remote_runner_connected(connected: bool) {
+    if *REMOTE_RUNNER_CONNECTED.read() != connected {
+        *REMOTE_RUNNER_CONNECTED.write() = connected;
+    }
+}
+
+pub fn install_remote_tag_writer(writer: fn(String, TagValue)) {
+    let _ = REMOTE_TAG_WRITER.set(writer);
+}
+
+pub fn apply_remote_tag_snapshot(
+    values: BTreeMap<String, TagValue>,
+    revision: u64,
+) -> Result<(), String> {
+    with_session(|session| session.replace_tag_snapshot(values, revision))?;
+    *TAG_REVISION.write() += 1;
+    set_remote_runner_connected(true);
+    Ok(())
 }
 
 /// Pin the runtime of the live UI so Bevy callbacks resolve the same global
@@ -1234,6 +1297,9 @@ fn runtime_mode_requested() -> bool {
 }
 
 pub fn tick_tags(dt_ms: u64) {
+    if remote_runner_active() {
+        return;
+    }
     let changed = with_session(|session| session.tick_tags(dt_ms)).unwrap_or(false);
     if changed {
         *TAG_REVISION.write() += 1;
@@ -1241,6 +1307,14 @@ pub fn tick_tags(dt_ms: u64) {
 }
 
 pub fn write_tag(tag_id: &str, value: TagValue) -> Result<(), HmiError> {
+    if remote_runner_active() {
+        let writer = REMOTE_TAG_WRITER
+            .get()
+            .copied()
+            .ok_or_else(|| HmiError::InvalidCommand("运行器实时连接尚未初始化".to_string()))?;
+        writer(tag_id.to_string(), value);
+        return Ok(());
+    }
     let result = with_session(|session| session.write_tag(tag_id, value))
         .map_err(HmiError::InvalidCommand)?;
     if result.is_ok() {
@@ -1271,6 +1345,10 @@ pub fn invoke_button_action(action: &ButtonAction) -> Result<(), HmiError> {
 }
 
 pub fn persist_now() -> Result<(), String> {
+    if remote_runner_active() {
+        *SAVE_STATUS.write() = SaveStatus::Saved;
+        return Ok(());
+    }
     let json = export_json()?;
     match storage::save_raw(&json) {
         Ok(()) => {

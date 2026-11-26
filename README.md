@@ -1,6 +1,6 @@
 # MOX HMI Studio
 
-面向申通地铁车站 BAS 场景的 HMI 编辑器与运行器 MVP。编辑器是 Dioxus Native 0.8 的 macOS 原生窗口，内嵌 Bevy WebGPU 2D/3D 场景、触控板触觉反馈和 AI 控制隧道；运行器是独立的 Dioxus Web 0.8 + Bevy WebGPU WASM 站点，可通过 `?runtime=1` 直接进入只读运行态，并在支持 WebMCP 的浏览器中暴露页面内 AI 工具。两端共享 `hmi-ui` 界面层与 Bevy 场景层。
+面向申通地铁车站 BAS 场景的 HMI 编辑器与运行器 MVP。编辑器是 Dioxus Native 0.8 的 macOS 原生窗口，内嵌 Bevy WebGPU 2D/3D 场景、触控板触觉反馈和 AI 控制隧道；运行器是独立的 Dioxus Fullstack 0.8 应用，WASM 客户端使用 Bevy WebGPU 渲染，Rust 服务端持有工程与 Tag 仿真并通过 SSE 推送实时数据。运行器可通过 `?runtime=1` 直接进入只读运行态，并在支持 WebMCP 的浏览器中暴露页面内 AI 工具。两端共享 `hmi-ui` 界面层与 Bevy 场景层。
 
 ## 已实现能力
 
@@ -11,7 +11,7 @@
 - 2D/3D 删除节点时会召唤吃豆人逐个吃掉设备残影，带咀嚼音效和触觉反馈；可在顶栏“吃豆人”开关中关闭。
 - 3D 机房数字孪生：AHU、风机、水泵、风管、水管、阀门，以及 GLB 设备加载入口。
 - 2D/3D 均支持鼠标、MacBook 触控板、键盘和 PS5 DualSense；应用内按 `F1` 或手柄 Create 打开完整操作指引，按 Options 打开手柄菜单。
-- Tag 数据字典、模拟器、输入/输出映射和画面绑定；编辑态与运行态均以 4 Hz 推进仿真。
+- Tag 数据字典、模拟器、输入/输出映射和画面绑定；编辑态在本地以 4 Hz 推进仿真，Fullstack 运行态由服务端以 4 Hz 推进并广播。
 - 画面/节点增删改、Tag 增删改、绑定编辑、撤销/重做、JSON 导入导出、localStorage 自动保存。
 - 运行态只读画面、Tag 镜像、按钮写 Tag、设备详情卡；运行交互不会进入工程、撤销栈或自动保存。
 - 仅 WebGPU，无 WebGL2 回退；Dioxus 与 Bevy 共用稳定的 `#bevy-canvas`，切换编辑/运行不重建画布。
@@ -32,7 +32,7 @@
 - Rust nightly（Edition 2024），开发构建启用并行前端与泛型共享。
 - Bevy `0.20.1`，`webgpu`、2D/3D PBR、`bevy_picking`、GLB。
 - 编辑器：Dioxus Native `0.8.0-alpha.3` + Blitz，Bevy `0.20.1` 通过共享 wgpu 设备渲染到原生纹理。
-- 运行器：Dioxus Web `0.8.0-alpha.3` + Bevy WebGPU，输出静态 WASM 站点。
+- 运行器：Dioxus Fullstack `0.8.0-alpha.3` + Bevy WebGPU；WASM 客户端、Axum 服务端、Server Functions 与 SSE。
 - `winit` 原生窗口、`wasm32-unknown-unknown` + `wasm-bindgen`。
 
 ### 目录与职责
@@ -40,7 +40,7 @@
 ```text
 crates/hmi-core/   领域模型、校验、Tag 仿真、命令与撤销、持久化
 crates/hmi-ui/     Dioxus UI、桥接信号、编辑器和运行器布局
-apps/studio/       Bevy 场景层、网格渲染/拾取、Web 入口
+apps/studio/       Bevy 场景层、网格渲染/拾取、Fullstack 运行器客户端与服务端
 apps/editor/       Dioxus Native 窗口、内嵌 Bevy 画布、控制服务与触觉反馈
 apps/control/      控制 Hub、WebSocket、MCP stdio/HTTP 传输
 xtask/             统一开发入口：运行、编辑、打包、验证、E2E、字体与体积检查
@@ -50,7 +50,7 @@ spikes/            历史技术验证，仅作参考，不参与生产构建
 
 `hmi-ui` 与 Bevy 保持 crate 边界，避免 UI 依赖和场景依赖互相污染，也让 Web 运行器与原生编辑器共用同一份界面代码。
 
-编辑器采用 **Dioxus Native 0.8 原生外壳**，Blitz 负责 UI，Bevy 通过 `ManualTextureView` 渲染到共享 wgpu 纹理并作为 custom widget 嵌入。运行器保持 **Dioxus Web 0.8 + Bevy WebGPU**，两者共享同一套 UI 和场景层。
+编辑器采用 **Dioxus Native 0.8 原生外壳**，Blitz 负责 UI，Bevy 通过 `ManualTextureView` 渲染到共享 wgpu 纹理并作为 custom widget 嵌入。运行器采用 **Dioxus Fullstack 0.8 + Bevy WebGPU**，两者共享同一套 UI 和场景层。
 
 ## 本地运行
 
@@ -94,7 +94,7 @@ cargo x bundle
 
 项目内的 `.cargo/config.toml` 将 `cargo x` 映射到 workspace 的 `xtask`。`cargo x run` 默认打开 `http://127.0.0.1:8088/?runtime=1`。
 
-需要修改 Web UI 并使用热更新时，仍可直接使用 Dioxus CLI：
+需要修改 Fullstack 客户端或服务端并使用热更新时，仍可直接使用 Dioxus CLI：
 
 ```bash
 cd apps/studio
@@ -129,15 +129,30 @@ open "target/MOX HMI Studio.app"
 
 ### Web 运行器
 
-运行器使用独立的 Dioxus Web 0.8 构建，可直接作为静态站点发布：
+运行器使用 Dioxus Fullstack 0.8。服务端持有工程、Tag 仿真和写值入口，WASM 客户端通过 Server Functions 获取首个快照，并通过 SSE 持续接收 4 Hz Tag 更新：
 
 ```text
 http://127.0.0.1:8088/?runtime=1
 ```
 
-该入口强制进入只读运行态，隐藏编辑器面板、AI 隧道和“退出运行”按钮。后续将增加 Dioxus Fullstack 服务端，用工程 ID、版本和权限控制运行器的数据来源；当前 MVP 仍从同源 localStorage 或内置示例加载工程。
+该入口强制进入只读运行态，隐藏编辑器面板、AI 隧道和“退出运行”按钮。服务端提供：
 
-`cargo x bundle` 会输出 `dist/runner-web/`。该目录的 `index.html` 已内置运行态启动标记，直接部署这个目录即可，不需要再追加查询参数。
+- `GET /api/runner/bootstrap`：工程、首个 Tag 快照和数据类型。
+- `GET /api/runner/tags`：SSE 实时 Tag 流。
+- `POST /api/runner/tags/write`：运行态按钮和交互的 Tag 写值入口。
+
+服务端优先读取 `MOX_HMI_RUNNER_PROJECT` 指定的工程 JSON；未设置时读取 macOS 编辑器的默认工程 `~/Library/Application Support/MOX HMI Studio/project.json`，文件不存在则使用内置 BAS 示例。工程在服务启动后首次请求时加载，修改工程文件需要重启服务。
+
+使用内置 BAS 示例时，运行器页面会显示“未找到运行器工程”的警告，并给出缺失的工程路径和 `MOX_HMI_RUNNER_PROJECT` 配置方式。
+
+`cargo x bundle` 会输出 `dist/runner-web/`，其中包含 `server` 可执行文件和 `public/` 静态资源：
+
+```bash
+cd dist/runner-web
+MOX_HMI_RUNNER_PROJECT=/path/to/project.json IP=0.0.0.0 PORT=8088 ./server
+```
+
+`public/index.html` 已内置运行态启动标记，不需要再追加查询参数。生产环境应在反向代理后启用 HTTPS，并限制 `POST /api/runner/tags/write` 的访问范围。
 
 ## 操作指引
 
@@ -302,7 +317,7 @@ WebMCP 工具调用仍进入 `run_action` → `EditorCommand` → 校验/撤销�
 
 控制服务当前只提供明文 WebSocket。生产环境应部署在带 TLS 的反向代理后，使用 `wss://` 并强制配置 `--token`；不要将无令牌端口暴露到非受信网络。
 
-构建静态开发包：
+构建 Fullstack 开发包：
 
 ```bash
 cd apps/studio
@@ -310,6 +325,7 @@ dx build --web
 ```
 
 输出位于 `target/dx/mox-hmi-studio/debug/web/public`。
+服务端二进制位于 `target/dx/mox-hmi-studio/debug/web/server`。
 
 ## 工程数据
 
@@ -376,7 +392,7 @@ cargo x bundle
 输出：
 
 - `dist/MOX HMI Studio.dmg`：带应用图标的 macOS 安装镜像，包含应用和 Applications 快捷方式。
-- `dist/runner-web/`：默认以运行态启动的静态 Web 运行器。
+- `dist/runner-web/`：默认以运行态启动的 Dioxus Fullstack 运行器，包含 `server` 与 `public/`。
 
 构建带自定义子路径的发布包：
 
@@ -387,13 +403,13 @@ cd ../..
 cargo x check-wasm-size
 ```
 
-发布输出位于 `target/dx/mox-hmi-studio/release/web/public`。`cargo x check-wasm-size` 使用 `wasm-opt -Oz --strip-debug` 压缩 bundle 中的 `*_bg.wasm`，硬性上限为 30 MiB；需要安装 Binaryen：
+发布输出位于 `target/dx/mox-hmi-studio/release/web/`，其中 `server` 提供服务端，`public/` 提供 WASM 与静态资源。`cargo x check-wasm-size` 使用 `wasm-opt -Oz --strip-debug` 压缩 bundle 中的 `*_bg.wasm`，硬性上限为 30 MiB；需要安装 Binaryen：
 
 ```bash
 brew install binaryen
 ```
 
-静态站点将 `public` 内容映射到 `/mox-hmi/`，并满足：
+Fullstack 服务应将 `public` 内容映射到 `/mox-hmi/`，并满足：
 
 - `.wasm` 返回 `application/wasm`。
 - 开启 Brotli 或 gzip（至少压缩 `.wasm`、`.js`、`.css`）。
@@ -405,7 +421,7 @@ brew install binaryen
 ## 当前非目标
 
 - Modbus、BACnet、OPC UA 等真实工业协议接入。
-- 用户权限、审计、报警管理、脚本引擎、历史库和多用户协作。
+- 用户权限、审计、报警管理、脚本引擎、历史库和多用户协作；运行器写 Tag API 当前不内置鉴权。
 - Safari、Firefox、移动端适配及 WebGL2 兼容层。
 - 工业级 3D 模型编辑；本期仅提供设备参数和 GLB 加载入口。
 

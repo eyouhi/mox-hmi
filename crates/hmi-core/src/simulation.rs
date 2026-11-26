@@ -53,6 +53,21 @@ impl TagSimulation {
         &self.snapshot
     }
 
+    pub fn replace_snapshot(&mut self, values: BTreeMap<String, TagValue>, revision: u64) -> bool {
+        let mut changed = false;
+        for (id, entry) in &mut self.entries {
+            if let Some(value) = values.get(id) {
+                if entry.value != *value {
+                    entry.value = value.clone();
+                    changed = true;
+                }
+            }
+        }
+        changed |= self.snapshot.revision() != revision;
+        self.snapshot = TagSnapshot::new(values, revision);
+        changed
+    }
+
     pub fn tick(&mut self, dt_ms: u64) -> bool {
         self.accumulator_ms = self.accumulator_ms.saturating_add(dt_ms);
         let mut changed = false;

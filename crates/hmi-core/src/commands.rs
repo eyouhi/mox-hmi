@@ -128,6 +128,14 @@ impl EditorSession {
         self.simulation.tick(dt_ms)
     }
 
+    pub fn replace_tag_snapshot(
+        &mut self,
+        values: std::collections::BTreeMap<String, TagValue>,
+        revision: u64,
+    ) -> bool {
+        self.simulation.replace_snapshot(values, revision)
+    }
+
     pub fn write_tag(&mut self, tag_id: &str, value: TagValue) -> Result<(), HmiError> {
         self.simulation.write(tag_id, value)
     }

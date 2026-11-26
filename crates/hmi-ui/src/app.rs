@@ -147,6 +147,9 @@ pub fn App() -> Element {
 
     use_effect(move || {
         let revision = bridge::DOCUMENT_REVISION();
+        if bridge::remote_runner_active() {
+            return;
+        }
         let token = autosave_token.get().wrapping_add(1);
         autosave_token.set(token);
         let token_cell = autosave_token.clone();

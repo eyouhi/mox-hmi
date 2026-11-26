@@ -155,12 +155,19 @@ fn bundle(args: Vec<String>) -> Result<(), String> {
 
     let root = workspace_root();
     let source_web = web_dir(false);
+    let source_runner = runner_bundle_dir(false);
     let icon = source_app.join("Contents/Resources/AppIcon.icns");
     if !source_app.is_dir() {
         return Err(format!("应用包不存在: {}", source_app.display()));
     }
     if !source_web.join("index.html").is_file() {
-        return Err(format!("运行器 Web 产物不存在: {}", source_web.display()));
+        return Err(format!("运行器客户端产物不存在: {}", source_web.display()));
+    }
+    if !source_runner.join("server").is_file() {
+        return Err(format!(
+            "运行器 Fullstack 服务端产物不存在: {}",
+            source_runner.join("server").display()
+        ));
     }
     if !icon.is_file() {
         return Err(format!("应用图标未生成: {}", icon.display()));
@@ -175,8 +182,8 @@ fn bundle(args: Vec<String>) -> Result<(), String> {
         .map_err(|error| format!("无法创建 dist 目录 {}: {error}", dist.display()))?;
 
     let runner_web = dist.join("runner-web");
-    copy_tree(&source_web, &runner_web)?;
-    configure_runner_index(&runner_web.join("index.html"))?;
+    copy_tree(&source_runner, &runner_web)?;
+    configure_runner_index(&runner_web.join("public/index.html"))?;
 
     let staging = root.join("target/dmg-staging");
     if staging.is_dir() {
@@ -211,7 +218,8 @@ fn bundle(args: Vec<String>) -> Result<(), String> {
     println!();
     println!("Bundle 输出:");
     println!("  编辑器安装包: {}", dmg.display());
-    println!("  运行器 Web:   {}", runner_web.display());
+    println!("  运行器服务:   {}", runner_web.join("server").display());
+    println!("  运行器资源:   {}", runner_web.join("public").display());
     println!("  WebGPU：运行器需通过 HTTPS（或 localhost）部署。");
     Ok(())
 }
@@ -372,6 +380,8 @@ fn verify(args: Vec<String>) -> Result<(), String> {
             "mox-hmi-studio",
             "--target",
             "wasm32-unknown-unknown",
+            "--features",
+            "web",
         ]),
         "wasm32 cargo check",
     )?;
@@ -700,10 +710,14 @@ fn build_editor(debug: bool) -> Result<PathBuf, String> {
 }
 
 fn web_dir(debug: bool) -> PathBuf {
+    runner_bundle_dir(debug).join("public")
+}
+
+fn runner_bundle_dir(debug: bool) -> PathBuf {
     workspace_root()
         .join("target/dx/mox-hmi-studio")
         .join(if debug { "debug" } else { "release" })
-        .join("web/public")
+        .join("web")
 }
 
 fn wait_until_ready(child: &mut Child, host: &str, port: &str) -> Result<(), String> {
@@ -829,7 +843,7 @@ fn print_help() {
          cargo x run --port 9000        覆盖运行器端口\n  \
          cargo x run --release          以 release 模式启动运行器\n  \
          cargo x run --no-open          不自动打开浏览器\n\n  \
-         cargo x bundle                 生成 dist/ 下的 DMG 与运行器 Web 目录\n\n\
+         cargo x bundle                 生成 dist/ 下的 DMG 与 Fullstack 运行器目录\n\n\
          cargo x verify                 格式、测试、WASM 和两套浏览器验收\n  \
          cargo x verify --quick         跳过浏览器验收的快速检查\n\n  \
          cargo x e2e                    用快速 debug 构建运行 21 条浏览器交互验收\n  \

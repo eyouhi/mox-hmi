@@ -64,6 +64,8 @@ pub fn RuntimeTopbar() -> Element {
     );
     let engine = bridge::ENGINE_STATUS();
     let runtime_only = bridge::runtime_only();
+    let remote_runner = bridge::remote_runner_active();
+    let remote_connected = bridge::remote_runner_connected();
 
     rsx! {
         header { class: "runtime-topbar", "data-testid": "run-shell",
@@ -108,7 +110,22 @@ pub fn RuntimeTopbar() -> Element {
                 }
             }
             div { class: "runtime-spacer" }
-            span { class: "status-pill is-ok", "仿真 4 Hz" }
+            span {
+                class: if remote_runner && !remote_connected {
+                    "status-pill is-waiting"
+                } else {
+                    "status-pill is-ok"
+                },
+                if remote_runner {
+                    if remote_connected {
+                        "服务端实时 4 Hz"
+                    } else {
+                        "服务端重连中"
+                    }
+                } else {
+                    "本地仿真 4 Hz"
+                }
+            }
             span {
                 class: "runtime-value",
                 "data-testid": "supply-fan-state",

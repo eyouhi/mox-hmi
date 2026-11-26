@@ -128,6 +128,22 @@ fn writable_sine_tag_pauses_after_write_until_resume() {
 }
 
 #[test]
+fn remote_snapshot_replaces_values_and_revision() {
+    let mut sim = TagSimulation::new(&project());
+    let mut values = sim.snapshot().values().clone();
+    values.insert("tag.pulse".into(), TagValue::Bool(true));
+    values.insert("tag.sine".into(), TagValue::Number(22.5));
+
+    assert!(sim.replace_snapshot(values, 42));
+    assert_eq!(sim.snapshot().revision(), 42);
+    assert_eq!(sim.snapshot().get("tag.pulse"), Some(&TagValue::Bool(true)));
+    assert_eq!(
+        sim.snapshot().get("tag.sine"),
+        Some(&TagValue::Number(22.5))
+    );
+}
+
+#[test]
 fn write_errors_are_explicit() {
     let mut sim = TagSimulation::new(&project());
     assert!(matches!(
