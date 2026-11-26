@@ -268,7 +268,6 @@ pub static GAMEPAD_STATUS: GlobalSignal<GamepadStatus> = Signal::global(GamepadS
 pub static SELECTED_TAG: GlobalSignal<Option<String>> = Signal::global(|| None);
 pub static DELETE_FX: GlobalSignal<Option<DeleteFxEffect>> = Signal::global(|| None);
 pub static DELETE_FX_REVISION: GlobalSignal<u64> = Signal::global(|| 0);
-pub static DELETE_FX_ENABLED: GlobalSignal<bool> = Signal::global(|| true);
 pub static CONTROLLER_TUNING_HUD: GlobalSignal<Option<ControllerTuningHud>> =
     Signal::global(|| None);
 pub static GAMEPAD_MENU_HUD: GlobalSignal<Option<GamepadMenuHud>> = Signal::global(|| None);
@@ -538,22 +537,11 @@ pub fn delete_fx_revision() -> u64 {
     *DELETE_FX_REVISION.read()
 }
 
-pub fn delete_fx_enabled() -> bool {
-    DELETE_FX_ENABLED()
-}
-
-pub fn set_delete_fx_enabled(enabled: bool) {
-    *DELETE_FX_ENABLED.write() = enabled;
-}
-
 pub fn delete_fx() -> Option<DeleteFxEffect> {
     DELETE_FX()
 }
 
 fn collect_delete_fx(commands: &[EditorCommand]) -> Option<DeleteFxEffect> {
-    if !delete_fx_enabled() {
-        return None;
-    }
     let screen_id = active_screen()?;
     let project = project();
     let screen = project.screen(&screen_id)?;
@@ -598,9 +586,6 @@ fn publish_delete_fx(mut effect: Option<DeleteFxEffect>) {
     let Some(effect) = effect.as_mut() else {
         return;
     };
-    if !delete_fx_enabled() {
-        return;
-    }
     effect.document_revision = document_revision();
     *DELETE_FX.write() = Some(effect.clone());
     *DELETE_FX_REVISION.write() += 1;

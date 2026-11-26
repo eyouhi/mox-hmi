@@ -250,7 +250,7 @@ fn GuideTwoD() -> Element {
                     tr { td { kbd { "Home" } } td { "恢复 2D 最佳视角" } }
                     tr { td { kbd { "⌘Z" } kbd { "⌘⇧Z" } kbd { "Ctrl+Y" } } td { "撤销 / 重做 / 重做" } }
                     tr { td { kbd { "⌘S" } } td { "立即刷写自动保存（日常无需手动操作）" } }
-                    tr { td { kbd { "Delete" } kbd { "Backspace" } } td { "删除所选节点（锁定节点除外），吃豆人动画可在顶栏关闭" } }
+                    tr { td { kbd { "Delete" } kbd { "Backspace" } } td { "删除所选节点（锁定节点除外），设备残影由吃豆人逐个吃掉" } }
                     tr { td { kbd { "Esc" } } td { "取消选择 / 关闭指引" } }
                 }
             }
@@ -327,7 +327,7 @@ fn GuideThreeD() -> Element {
                     tr { td { kbd { "⌘A" } } td { "全选当前画面的可见设备" } }
                     tr { td { kbd { "⌘C" } kbd { "⌘V" } kbd { "⌘X" } } td { "复制 / 粘贴 / 剪切；跨同类型画面粘贴会保留相对位置" } }
                     tr { td { kbd { "⌘D" } } td { "原地复制所选设备，不改写剪贴板" } }
-                    tr { td { kbd { "Delete" } } td { "删除所选设备（锁定设备除外），吃豆人动画可在顶栏关闭" } }
+                    tr { td { kbd { "Delete" } } td { "删除所选设备（锁定设备除外），设备残影由吃豆人逐个吃掉" } }
                     tr { td { kbd { "⌘Z" } kbd { "⌘⇧Z" } kbd { "Ctrl+Y" } } td { "撤销 / 重做 / 重做" } }
                     tr { td { kbd { "⌘S" } } td { "立即刷写自动保存（日常无需手动操作）" } }
                 }

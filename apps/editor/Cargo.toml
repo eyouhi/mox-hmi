@@ -43,7 +43,7 @@ hmi-core = { path = "../../crates/hmi-core" }
 hmi-control-protocol = { path = "../../crates/hmi-control-protocol" }
 keyboard-types = "0.8"
 mox-hmi-control = { path = "../control" }
-mox-hmi-studio = { path = "../studio" }
+mox-hmi-studio = { path = "../studio", features = ["scene"] }
 mox-hmi-ui = { path = "../../crates/hmi-ui" }
 peniko = "0.6.1"
 parley = { version = "0.12", features = ["system"] }

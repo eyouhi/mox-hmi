@@ -111,9 +111,6 @@ pub(crate) fn start_delete_fx(
     if let Some(active) = state.active.take() {
         despawn_effect(&mut commands, &active);
     }
-    if !crate::bridge::delete_fx_enabled() {
-        return;
-    }
     let Some(effect) = crate::bridge::delete_fx() else {
         return;
     };
@@ -409,7 +406,6 @@ pub(crate) fn tick_delete_fx(
     if state.active.is_none() {
         return;
     }
-    let enabled = crate::bridge::delete_fx_enabled();
     let screen_matches = state.active.as_ref().is_some_and(|active| {
         crate::bridge::active_screen().as_deref() == Some(active.screen_id.as_str())
     });
@@ -417,7 +413,7 @@ pub(crate) fn tick_delete_fx(
         .active
         .as_ref()
         .is_some_and(|active| crate::bridge::document_revision() == active.document_revision);
-    if !enabled || !screen_matches || !revision_matches {
+    if !screen_matches || !revision_matches {
         if let Some(active) = state.active.take() {
             despawn_effect(&mut commands, &active);
         }
