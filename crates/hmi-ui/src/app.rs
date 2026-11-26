@@ -393,7 +393,7 @@ fn install_wheel_zoom_bridge() {
               window.__moxHmiWheelMouseActive = false;
             }, 350);
           };
-          window.addEventListener("wheel", (event) => {
+          const classifyWheel = (event) => {
             if (event.ctrlKey || event.metaKey) {
               markWheelZoomActive();
               return;
@@ -407,7 +407,7 @@ fn install_wheel_zoom_bridge() {
               ? Math.abs(legacy) >= 120 && Math.abs(legacy) % 120 === 0
               : Math.abs(event.deltaY) >= 100 && event.deltaX === 0 && Number.isInteger(event.deltaY);
             if (looksLikeMouseWheel) markMouseWheelActive();
-          }, { capture: true, passive: true });
+          };
 
           const attachGestureBridge = () => {
             const canvas = document.querySelector("#bevy-canvas");
@@ -417,6 +417,10 @@ fn install_wheel_zoom_bridge() {
             }
             if (canvas.__moxHmiGestureBridge) return;
             canvas.__moxHmiGestureBridge = true;
+            canvas.addEventListener("wheel", (event) => {
+              classifyWheel(event);
+              if (event.cancelable) event.preventDefault();
+            }, { passive: false });
             canvas.addEventListener("contextmenu", (event) => event.preventDefault(), { passive: false });
             let gestureScale = 1;
             canvas.addEventListener("gesturestart", (event) => {
@@ -424,6 +428,7 @@ fn install_wheel_zoom_bridge() {
               event.preventDefault();
             }, { passive: false });
             canvas.addEventListener("gesturechange", (event) => {
+              event.preventDefault();
               const next = Number(event.scale) || gestureScale;
               const ratio = gestureScale > 0 ? next / gestureScale : 1;
               gestureScale = next;
@@ -436,11 +441,11 @@ fn install_wheel_zoom_bridge() {
                 bubbles: true,
                 cancelable: true,
               }));
+            }, { passive: false });
+            canvas.addEventListener("gestureend", (event) => {
+              gestureScale = 1;
               event.preventDefault();
             }, { passive: false });
-            canvas.addEventListener("gestureend", () => {
-              gestureScale = 1;
-            }, { passive: true });
           };
           window.requestAnimationFrame(attachGestureBridge);
         })();

@@ -1384,9 +1384,10 @@ impl Harness {
             None,
         )?;
         self.flush_frame()?;
-        self.eval(&format!(
-            "(() => {{ const canvas = document.querySelector('#bevy-canvas'); for (let i = 0; i < {times}; i += 1) {{ canvas.dispatchEvent(new WheelEvent('wheel', {{ deltaY: {delta_y}, deltaMode: WheelEvent.DOM_DELTA_PIXEL, ctrlKey: true, bubbles: true, cancelable: true }})); }} return true; }})()"
+        let prevented = self.eval_bool(&format!(
+            "(() => {{ const canvas = document.querySelector('#bevy-canvas'); let prevented = true; for (let i = 0; i < {times}; i += 1) {{ const event = new WheelEvent('wheel', {{ deltaY: {delta_y}, deltaMode: WheelEvent.DOM_DELTA_PIXEL, ctrlKey: true, bubbles: true, cancelable: true }}); canvas.dispatchEvent(event); prevented = prevented && event.defaultPrevented; }} return prevented; }})()"
         ))?;
+        ensure!(prevented, "画布滚轮事件未阻止浏览器默认缩放/滚动");
         self.flush_frame()
     }
 
@@ -1400,9 +1401,10 @@ impl Harness {
             None,
             None,
         )?;
-        self.eval(&format!(
-            "(() => {{ const canvas = document.querySelector('#bevy-canvas'); const start = new Event('gesturestart', {{ bubbles: true, cancelable: true }}); Object.defineProperty(start, 'scale', {{ value: 1 }}); canvas.dispatchEvent(start); for (let i = 1; i <= {times}; i += 1) {{ const event = new Event('gesturechange', {{ bubbles: true, cancelable: true }}); Object.defineProperty(event, 'scale', {{ value: Math.pow({scale}, i) }}); canvas.dispatchEvent(event); }} canvas.dispatchEvent(new Event('gestureend', {{ bubbles: true, cancelable: true }})); return true; }})()"
+        let prevented = self.eval_bool(&format!(
+            "(() => {{ const canvas = document.querySelector('#bevy-canvas'); const start = new Event('gesturestart', {{ bubbles: true, cancelable: true }}); Object.defineProperty(start, 'scale', {{ value: 1 }}); canvas.dispatchEvent(start); let prevented = start.defaultPrevented; for (let i = 1; i <= {times}; i += 1) {{ const event = new Event('gesturechange', {{ bubbles: true, cancelable: true }}); Object.defineProperty(event, 'scale', {{ value: Math.pow({scale}, i) }}); canvas.dispatchEvent(event); prevented = prevented && event.defaultPrevented; }} const end = new Event('gestureend', {{ bubbles: true, cancelable: true }}); canvas.dispatchEvent(end); prevented = prevented && end.defaultPrevented; return prevented; }})()"
         ))?;
+        ensure!(prevented, "Safari 捏合手势未阻止浏览器默认页面缩放");
         Ok(())
     }
 

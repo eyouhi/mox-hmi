@@ -27,6 +27,11 @@ body,
   margin: 0;
 }
 
+html,
+body {
+  overscroll-behavior: none;
+}
+
 body {
   overflow: auto;
   font-family: "Noto Serif CJK SC", "Noto Serif SC", "Songti SC", "PingFang SC", serif;
