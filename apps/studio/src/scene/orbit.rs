@@ -3,7 +3,6 @@ use super::input::{self, GamepadState, PadButton};
 use super::plugin::{CachedProject, HmiCameras};
 use super::three_d::{HoveredThreeD, THREE_D_ROOM_SIZE};
 use super::three_d_edit::ThreeDEditState;
-use bevy::input::mouse::MouseScrollUnit;
 use bevy::input::mouse::{AccumulatedMouseMotion, MouseWheel};
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
@@ -284,12 +283,8 @@ fn apply_orbit_wheel(
             continue;
         }
         if input::wheel_intent(event, keyboard) == input::WheelIntent::Zoom {
-            let sensitivity = if event.unit == MouseScrollUnit::Line {
-                0.12
-            } else {
-                0.003
-            };
-            orbit.distance = (orbit.distance * (-event.y * sensitivity).exp()).clamp(6.0, 24.0);
+            orbit.distance =
+                (orbit.distance / input::wheel_zoom_factor(event.y, event.unit)).clamp(6.0, 24.0);
         } else if event.x.abs() > f32::EPSILON || event.y.abs() > f32::EPSILON {
             let right = transform.right().as_vec3();
             let up = transform.up().as_vec3();

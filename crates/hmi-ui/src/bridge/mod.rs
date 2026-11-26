@@ -1382,8 +1382,12 @@ pub fn camera_reset_revision() -> u32 {
     *CAMERA_RESET_REVISION.read()
 }
 
-pub fn reset_camera_3d() {
+pub fn reset_camera_view() {
     *CAMERA_RESET_REVISION.write() += 1;
+}
+
+pub fn reset_camera_3d() {
+    reset_camera_view();
 }
 
 pub fn align_selected_3d(display_axis: usize) -> Result<usize, String> {

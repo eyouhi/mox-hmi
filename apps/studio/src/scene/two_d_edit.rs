@@ -3,7 +3,7 @@ use super::delete_fx::DeleteFxOverlayCamera;
 use super::input::{self, GamepadState, PadButton};
 use super::plugin::{CachedProject, HmiCameras};
 use super::two_d::{DESIGN_SIZE, HmiNodeRoot, TwoDVisualIndex};
-use bevy::input::mouse::{MouseScrollUnit, MouseWheel};
+use bevy::input::mouse::MouseWheel;
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 use hmi_core::{
@@ -693,6 +693,7 @@ pub fn two_d_input(
     mut child_transforms: TwoDChildTransformQuery<'_, '_>,
     mut edit_state: ResMut<TwoDEditState>,
     mut camera_state: ResMut<TwoDCameraState>,
+    mut reset_revision: Local<u32>,
 ) {
     if !cached.is_two_d() {
         reset_two_d_input(
@@ -714,6 +715,11 @@ pub fn two_d_input(
     else {
         return;
     };
+    let current_reset = crate::bridge::camera_reset_revision();
+    if current_reset != *reset_revision {
+        *reset_revision = current_reset;
+        reset_two_d_camera(&mut transform, &mut projection, &mut camera_state);
+    }
     let cursor = window.cursor_position();
     let pointer_on_canvas = cursor.is_some_and(input::pointer_over_canvas);
     let viewport_center = camera.logical_viewport_size().map(|size| size * 0.5);
@@ -1273,11 +1279,6 @@ fn apply_wheel_2d(
             if event.y.abs() < f32::EPSILON {
                 continue;
             }
-            let sensitivity = if event.unit == MouseScrollUnit::Line {
-                0.12
-            } else {
-                0.003
-            };
             apply_zoom_2d(
                 camera,
                 camera_transform,
@@ -1285,7 +1286,7 @@ fn apply_wheel_2d(
                 projection,
                 camera_state,
                 cursor,
-                (-event.y * sensitivity).exp(),
+                input::wheel_zoom_factor(event.y, event.unit),
             );
         } else if event.x.abs() > f32::EPSILON || event.y.abs() > f32::EPSILON {
             let offset = wheel_pan_translation(Vec2::new(event.x, event.y), camera_state.zoom);
@@ -1344,6 +1345,9 @@ fn apply_keyboard_2d(
     }
     if keyboard.just_pressed(KeyCode::KeyF) {
         frame_selected_2d(nodes, transform, projection, camera_state);
+    }
+    if keyboard.just_pressed(KeyCode::Home) {
+        reset_two_d_camera(transform, projection, camera_state);
     }
     let selected = crate::bridge::selected_nodes();
     let unlocked = selected_unlocked_nodes(nodes, &selected);
@@ -1638,6 +1642,20 @@ fn frame_selected_2d(
     let world = design_to_world(center, DESIGN_SIZE);
     transform.translation.x = world[0];
     transform.translation.y = world[1];
+    clamp_two_d_camera_view(transform);
+}
+
+fn reset_two_d_camera(
+    transform: &mut Transform,
+    projection: &mut Projection,
+    camera_state: &mut TwoDCameraState,
+) {
+    camera_state.zoom = 1.0;
+    if let Projection::Orthographic(orthographic) = projection {
+        orthographic.scale = 1.0;
+    }
+    transform.translation.x = 0.0;
+    transform.translation.y = 0.0;
     clamp_two_d_camera_view(transform);
 }
 
@@ -2357,10 +2375,10 @@ mod tests {
     use super::{
         CenterSnapTargets, DragState, TwoDEditState, clamp_two_d_camera_view,
         drag_activation_reached, fine_nudge_snap, node_local_to_design, normalized_pipe_node,
-        snap_pipe_point, update_pan, wheel_pan_translation,
+        reset_two_d_camera, snap_pipe_point, update_pan, wheel_pan_translation,
     };
     use bevy::input::{ButtonInput, mouse::MouseButton};
-    use bevy::prelude::{KeyCode, Transform, Vec2};
+    use bevy::prelude::{KeyCode, OrthographicProjection, Projection, Transform, Vec2};
     use hmi_core::{CenterSnap, EquipmentKind, HexColor, Rect, UiNode, Widget2D};
 
     fn pipe_node(points: Vec<[f32; 2]>) -> UiNode {
@@ -2483,6 +2501,24 @@ mod tests {
 
         assert_eq!(transform.translation.x, 800.0);
         assert_eq!(transform.translation.y, -450.0);
+    }
+
+    #[test]
+    fn reset_two_d_camera_restores_the_full_design_view() {
+        let mut transform = Transform::from_xyz(320.0, -180.0, 1000.0);
+        let mut projection = Projection::Orthographic(OrthographicProjection::default_2d());
+        let mut camera_state = super::TwoDCameraState { zoom: 2.5 };
+
+        reset_two_d_camera(&mut transform, &mut projection, &mut camera_state);
+
+        assert_eq!(transform.translation.x, 0.0);
+        assert_eq!(transform.translation.y, 0.0);
+        assert_eq!(transform.translation.z, 1000.0);
+        assert_eq!(camera_state.zoom, 1.0);
+        let Projection::Orthographic(orthographic) = projection else {
+            panic!("2D camera must use an orthographic projection");
+        };
+        assert_eq!(orthographic.scale, 1.0);
     }
 
     #[test]

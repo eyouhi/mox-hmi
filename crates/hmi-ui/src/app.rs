@@ -269,6 +269,7 @@ pub fn App() -> Element {
                         }
                         div { class: "canvas-hint-bar", "data-testid": "canvas-hints",
                             span { class: "canvas-hint-copy", "{edit_hint}" }
+                            BestViewButton {}
                             button {
                                 class: "canvas-guide-button",
                                 "data-testid": "canvas-guide-button",
@@ -276,6 +277,10 @@ pub fn App() -> Element {
                                 onclick: move |_| bridge::set_guide_open(true),
                                 "操作指引 · F1"
                             }
+                        }
+                    } else {
+                        div { class: "runtime-view-controls",
+                            BestViewButton {}
                         }
                     }
                     if run_mode {
@@ -347,6 +352,24 @@ pub fn App() -> Element {
 
             ControllerTuningHud {}
             GamepadMenuHud {}
+        }
+    }
+}
+
+#[component]
+fn BestViewButton() -> Element {
+    rsx! {
+        button {
+            class: "canvas-guide-button",
+            "data-testid": "reset-view-button",
+            title: "恢复当前画面的最佳视角 Home",
+            aria_label: "恢复最佳视角",
+            aria_keyshortcuts: "Home",
+            onclick: move |_| {
+                bridge::reset_camera_view();
+                crate::ui::common::focus_canvas();
+            },
+            "最佳视角"
         }
     }
 }
@@ -434,8 +457,10 @@ fn install_wheel_zoom_bridge() {
               gestureScale = next;
               if (!Number.isFinite(ratio) || Math.abs(ratio - 1) < 0.001) return;
               markWheelZoomActive();
+              // winit negates the DOM delta before forwarding it to Bevy.
+              // Pinching out must therefore emit a negative DOM deltaY.
               canvas.dispatchEvent(new WheelEvent("wheel", {
-                deltaY: Math.log(ratio) * 120,
+                deltaY: -Math.log(ratio) * 120,
                 deltaMode: WheelEvent.DOM_DELTA_PIXEL,
                 ctrlKey: true,
                 bubbles: true,

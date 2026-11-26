@@ -247,6 +247,7 @@ fn GuideTwoD() -> Element {
                     tr { td { kbd { "Q" } kbd { "E" } } td { "单选时逆时针 / 顺时针旋转 1°" } }
                     tr { td { kbd { "Shift" } " + " kbd { "Q" } kbd { "E" } } td { "单选时旋转 15°" } }
                     tr { td { kbd { "F" } } td { "聚焦全部所选节点" } }
+                    tr { td { kbd { "Home" } } td { "恢复 2D 最佳视角" } }
                     tr { td { kbd { "⌘Z" } kbd { "⌘⇧Z" } kbd { "Ctrl+Y" } } td { "撤销 / 重做 / 重做" } }
                     tr { td { kbd { "⌘S" } } td { "立即刷写自动保存（日常无需手动操作）" } }
                     tr { td { kbd { "Delete" } kbd { "Backspace" } } td { "删除所选节点（锁定节点除外），吃豆人动画可在顶栏关闭" } }
@@ -321,7 +322,7 @@ fn GuideThreeD() -> Element {
                     tr { td { kbd { "Option/Alt" } " + 方向键" } td { "环绕旋转视角" } }
                     tr { td { kbd { "W" } kbd { "A" } kbd { "S" } kbd { "D" } } td { "相对当前视角平移观察中心" } }
                     tr { td { kbd { "+" } kbd { "-" } } td { "拉近 / 拉远" } }
-                    tr { td { kbd { "Home" } } td { "重置 3D 视角" } }
+                    tr { td { kbd { "Home" } } td { "恢复 3D 最佳视角" } }
                     tr { td { kbd { "F" } } td { "聚焦所选设备" } }
                     tr { td { kbd { "⌘A" } } td { "全选当前画面的可见设备" } }
                     tr { td { kbd { "⌘C" } kbd { "⌘V" } kbd { "⌘X" } } td { "复制 / 粘贴 / 剪切；跨同类型画面粘贴会保留相对位置" } }

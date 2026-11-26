@@ -965,6 +965,14 @@ ul.tag-rows {
 
 .canvas-guide-button:hover { background: #143a3d; }
 
+.runtime-view-controls {
+  position: absolute;
+  right: 0.75rem;
+  bottom: 0.75rem;
+  z-index: 6;
+  pointer-events: none;
+}
+
 .axis-gizmo {
   position: absolute;
   left: 0.75rem;

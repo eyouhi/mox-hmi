@@ -588,6 +588,15 @@ pub fn pinch_zoom_factor(delta: f32) -> f32 {
     (delta * PINCH_ZOOM_SENSITIVITY).exp()
 }
 
+pub fn wheel_zoom_factor(y: f32, unit: MouseScrollUnit) -> f32 {
+    let sensitivity = if unit == MouseScrollUnit::Line {
+        0.12
+    } else {
+        0.003
+    };
+    (y * sensitivity).exp()
+}
+
 fn wheel_intent_from(unit: MouseScrollUnit, zoom_modifier: bool, mouse_wheel: bool) -> WheelIntent {
     if zoom_modifier || unit == MouseScrollUnit::Line || mouse_wheel {
         WheelIntent::Zoom
@@ -840,6 +849,14 @@ mod tests {
         assert!(pinch_zoom_factor(0.05) > 1.0);
         assert!(pinch_zoom_factor(-0.05) < 1.0);
         assert_eq!(pinch_zoom_factor(0.0), 1.0);
+    }
+
+    #[test]
+    fn wheel_up_is_zoom_in_for_line_and_pixel_deltas() {
+        assert!(wheel_zoom_factor(1.0, MouseScrollUnit::Line) > 1.0);
+        assert!(wheel_zoom_factor(-1.0, MouseScrollUnit::Line) < 1.0);
+        assert!(wheel_zoom_factor(120.0, MouseScrollUnit::Pixel) > 1.0);
+        assert!(wheel_zoom_factor(-120.0, MouseScrollUnit::Pixel) < 1.0);
     }
 
     #[test]

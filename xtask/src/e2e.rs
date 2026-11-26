@@ -455,12 +455,14 @@ impl Harness {
         self.wait_absent("node-row-node-ahu-copy1", Duration::from_secs(5))?;
         self.click("node-row-node-ahu")?;
 
-        let zoom_before = self.text("zoom-value")?;
-        self.dispatch_wheel(-120.0, 4)?;
-        self.wait_text_ne("zoom-value", &zoom_before, Duration::from_secs(2))?;
-        let zoom_after_wheel = self.text("zoom-value")?;
+        let zoom_before = self.zoom_percent()?;
+        self.dispatch_wheel(-120.0, 1)?;
+        self.wait_zoom_greater("向上滚动应放大 2D 画布", zoom_before)?;
+        let zoom_after_wheel = self.zoom_percent()?;
         self.dispatch_safari_pinch(1.12, 4)?;
-        self.wait_text_ne("zoom-value", &zoom_after_wheel, Duration::from_secs(2))?;
+        self.wait_zoom_greater("向外捏合应放大 2D 画布", zoom_after_wheel)?;
+        self.click("reset-view-button")?;
+        self.wait_text("zoom-value", "100%", Duration::from_secs(2))?;
 
         self.press_gamepad_button(2)?;
         self.wait_text("selection-id", "node.ahu.copy1", Duration::from_secs(5))?;
@@ -736,6 +738,8 @@ impl Harness {
         self.wait_absent("inspector", Duration::from_secs(5))?;
         self.click("run-screen-2d")?;
         thread::sleep(Duration::from_millis(600));
+        self.wait_visible("reset-view-button", Duration::from_secs(5))?;
+        self.click("reset-view-button")?;
         let fan_before = self.text("supply-fan-state")?;
         self.click("button-supply-fan")?;
         self.wait_text_ne("supply-fan-state", &fan_before, Duration::from_secs(5))?;
@@ -915,6 +919,19 @@ impl Harness {
     fn wait_text_ne(&self, testid: &str, previous: &str, timeout: Duration) -> Result<(), String> {
         self.wait_until(&format!("{testid} 文本发生变化"), timeout, || {
             Ok(self.text(testid)? != previous)
+        })
+    }
+
+    fn zoom_percent(&self) -> Result<f64, String> {
+        let text = self.text("zoom-value")?;
+        text.trim_end_matches('%')
+            .parse()
+            .map_err(|error| format!("无法解析缩放值 `{text}`: {error}"))
+    }
+
+    fn wait_zoom_greater(&self, description: &str, previous: f64) -> Result<(), String> {
+        self.wait_until(description, Duration::from_secs(2), || {
+            Ok(self.zoom_percent()? > previous)
         })
     }
 
