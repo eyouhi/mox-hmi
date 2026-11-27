@@ -813,7 +813,11 @@ fn device_local_bounds(model: &DeviceModel) -> (Vec3, Vec3) {
     match model {
         DeviceModel::Ahu { size, .. }
         | DeviceModel::Fan { size, .. }
-        | DeviceModel::Pump { size, .. } => (Vec3::ZERO, Vec3::from_array(*size) * 0.5),
+        | DeviceModel::Pump { size, .. }
+        | DeviceModel::Chiller { size, .. }
+        | DeviceModel::CoolingTower { size, .. }
+        | DeviceModel::HeatExchanger { size, .. }
+        | DeviceModel::ControlCabinet { size, .. } => (Vec3::ZERO, Vec3::from_array(*size) * 0.5),
         DeviceModel::Duct {
             length, diameter, ..
         }

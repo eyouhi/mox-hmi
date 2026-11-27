@@ -51,6 +51,10 @@ pub fn model_label(model: &DeviceModel) -> &'static str {
         DeviceModel::Duct { .. } => "3D Duct",
         DeviceModel::Pipe { .. } => "3D Pipe",
         DeviceModel::Valve { .. } => "3D Valve",
+        DeviceModel::Chiller { .. } => "3D Chiller",
+        DeviceModel::CoolingTower { .. } => "3D CoolingTower",
+        DeviceModel::HeatExchanger { .. } => "3D HeatExchanger",
+        DeviceModel::ControlCabinet { .. } => "3D ControlCabinet",
         DeviceModel::Glb { .. } => "3D GLB",
     }
 }

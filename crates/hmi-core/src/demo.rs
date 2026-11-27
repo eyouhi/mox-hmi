@@ -375,6 +375,38 @@ pub fn bas_demo() -> ProjectDocument {
             vec![pump_on()],
         ),
         equipment(
+            "node.control_cabinet",
+            "控制柜 CP-01",
+            rect(910.0, 80.0, 110.0, 150.0),
+            EquipmentKind::ControlCabinet,
+            "CP-01",
+            vec![],
+        ),
+        equipment(
+            "node.chiller",
+            "冷水机组 CH-01",
+            rect(1080.0, 80.0, 240.0, 155.0),
+            EquipmentKind::Chiller,
+            "CH-01",
+            vec![pump_on()],
+        ),
+        equipment(
+            "node.cooling_tower",
+            "冷却塔 CT-01",
+            rect(1360.0, 80.0, 180.0, 210.0),
+            EquipmentKind::CoolingTower,
+            "CT-01",
+            vec![fan_on()],
+        ),
+        equipment(
+            "node.heat_exchanger",
+            "板式换热器 HX-01",
+            rect(1260.0, 390.0, 230.0, 150.0),
+            EquipmentKind::HeatExchanger,
+            "HX-01",
+            vec![pump_on()],
+        ),
+        equipment(
             "node.valve_fresh",
             "新风阀",
             rect(330.0, 260.0, 90.0, 80.0),
@@ -642,6 +674,52 @@ pub fn bas_demo() -> ProjectDocument {
                 color: HexColor("#31505a".into()),
             },
             vec![valve_progress()],
+        ),
+        device(
+            "node.3d.chiller",
+            "冷水机组 CH-01",
+            [-4.4, 1.0, -2.8],
+            DeviceModel::Chiller {
+                size: [3.2, 2.0, 2.2],
+                color: HexColor("#23434d".into()),
+            },
+            vec![
+                pump_on(),
+                rotation_range("bas.supply_fan.freq", 0.0, 50.0, 0.0, 12.0),
+            ],
+        ),
+        device(
+            "node.3d.cooling_tower",
+            "冷却塔 CT-01",
+            [6.3, 1.6, 2.5],
+            DeviceModel::CoolingTower {
+                size: [2.2, 3.2, 2.2],
+                color: HexColor("#264850".into()),
+            },
+            vec![
+                fan_on(),
+                rotation_range("bas.supply_fan.freq", 0.0, 50.0, 0.0, 15.0),
+            ],
+        ),
+        device(
+            "node.3d.heat_exchanger",
+            "板式换热器 HX-01",
+            [1.5, 0.8, 6.5],
+            DeviceModel::HeatExchanger {
+                size: [2.4, 1.6, 1.2],
+                color: HexColor("#31505a".into()),
+            },
+            vec![pump_on()],
+        ),
+        device(
+            "node.3d.control_cabinet",
+            "控制柜 CP-01",
+            [-7.4, 1.0, -4.2],
+            DeviceModel::ControlCabinet {
+                size: [1.4, 2.0, 0.9],
+                color: HexColor("#2b4a54".into()),
+            },
+            vec![],
         ),
     ];
 

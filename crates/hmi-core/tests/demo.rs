@@ -46,6 +46,20 @@ fn bas_demo_covers_the_required_tags_and_equipment() {
             ..
         }
     )));
+    for kind in [
+        EquipmentKind::Chiller,
+        EquipmentKind::CoolingTower,
+        EquipmentKind::HeatExchanger,
+        EquipmentKind::ControlCabinet,
+    ] {
+        assert!(
+            nodes.iter().any(|node| matches!(
+                &node.widget,
+                Widget2D::EquipmentSymbol { equipment, .. } if *equipment == kind
+            )),
+            "missing 2D symbol {kind:?}"
+        );
+    }
     let Screen::ThreeD { nodes, .. } = &project.screens[1] else {
         unreachable!()
     };
@@ -64,6 +78,15 @@ fn bas_demo_covers_the_required_tags_and_equipment() {
             .iter()
             .any(|node| matches!(node.model, DeviceModel::Pump { .. }))
     );
+    let predicates: [fn(&DeviceModel) -> bool; 4] = [
+        |model: &DeviceModel| matches!(model, DeviceModel::Chiller { .. }),
+        |model: &DeviceModel| matches!(model, DeviceModel::CoolingTower { .. }),
+        |model: &DeviceModel| matches!(model, DeviceModel::HeatExchanger { .. }),
+        |model: &DeviceModel| matches!(model, DeviceModel::ControlCabinet { .. }),
+    ];
+    for predicate in predicates {
+        assert!(nodes.iter().any(|node| predicate(&node.model)));
+    }
 }
 
 #[test]

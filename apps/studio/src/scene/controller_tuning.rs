@@ -441,7 +441,11 @@ fn tuning_params_3d(node: &DeviceNode) -> Vec<TuningParam> {
     match &node.model {
         DeviceModel::Ahu { size, .. }
         | DeviceModel::Fan { size, .. }
-        | DeviceModel::Pump { size, .. } => {
+        | DeviceModel::Pump { size, .. }
+        | DeviceModel::Chiller { size, .. }
+        | DeviceModel::CoolingTower { size, .. }
+        | DeviceModel::HeatExchanger { size, .. }
+        | DeviceModel::ControlCabinet { size, .. } => {
             for (axis, label) in ["宽", "高", "深"].into_iter().enumerate() {
                 params.push(TuningParam {
                     field: TuningField::ModelSize(axis),
@@ -495,7 +499,11 @@ fn apply_3d(node: &mut DeviceNode, field: TuningField, delta: f32) {
         TuningField::ModelSize(axis) => match &mut node.model {
             DeviceModel::Ahu { size, .. }
             | DeviceModel::Fan { size, .. }
-            | DeviceModel::Pump { size, .. } => {
+            | DeviceModel::Pump { size, .. }
+            | DeviceModel::Chiller { size, .. }
+            | DeviceModel::CoolingTower { size, .. }
+            | DeviceModel::HeatExchanger { size, .. }
+            | DeviceModel::ControlCabinet { size, .. } => {
                 size[axis] = round3((size[axis] + delta).max(0.01));
             }
             _ => {}

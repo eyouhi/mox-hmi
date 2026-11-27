@@ -25,7 +25,7 @@ impl Default for OrbitCamera {
         Self {
             yaw: -0.65,
             pitch: 0.48,
-            distance: 13.0,
+            distance: 15.0,
             focus: Vec3::new(0.0, 1.4, 0.0),
         }
     }
@@ -369,7 +369,11 @@ fn model_span(model: &DeviceModel) -> f32 {
     match model {
         DeviceModel::Ahu { size, .. }
         | DeviceModel::Fan { size, .. }
-        | DeviceModel::Pump { size, .. } => size[0].max(size[1]).max(size[2]),
+        | DeviceModel::Pump { size, .. }
+        | DeviceModel::Chiller { size, .. }
+        | DeviceModel::CoolingTower { size, .. }
+        | DeviceModel::HeatExchanger { size, .. }
+        | DeviceModel::ControlCabinet { size, .. } => size[0].max(size[1]).max(size[2]),
         DeviceModel::Duct { length, .. } | DeviceModel::Pipe { length, .. } => *length,
         DeviceModel::Valve { size, .. } => *size * 2.0,
         DeviceModel::Glb { .. } => 3.0,

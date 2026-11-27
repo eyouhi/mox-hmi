@@ -831,6 +831,10 @@ fn Widget2DEditor(screen_id: String, node: UiNode) -> Element {
                     option { value: "fan", "风机" }
                     option { value: "pump", "水泵" }
                     option { value: "valve", "阀门" }
+                    option { value: "chiller", "冷水机组" }
+                    option { value: "cooling-tower", "冷却塔" }
+                    option { value: "heat-exchanger", "板式换热器" }
+                    option { value: "control-cabinet", "控制柜" }
                 }
             }
             TextField {
@@ -1023,11 +1027,20 @@ fn Inspector3D(screen_id: String, node: DeviceNode) -> Element {
                 match &node.model {
                     DeviceModel::Ahu { size, color }
                     | DeviceModel::Fan { size, color }
-                    | DeviceModel::Pump { size, color } => {
+                    | DeviceModel::Pump { size, color }
+                    | DeviceModel::Chiller { size, color }
+                    | DeviceModel::CoolingTower { size, color }
+                    | DeviceModel::HeatExchanger { size, color }
+                    | DeviceModel::ControlCabinet { size, color } => {
                         let variant = match &node.model {
                             DeviceModel::Ahu { .. } => "Ahu",
                             DeviceModel::Fan { .. } => "Fan",
-                            _ => "Pump",
+                            DeviceModel::Pump { .. } => "Pump",
+                            DeviceModel::Chiller { .. } => "Chiller",
+                            DeviceModel::CoolingTower { .. } => "CoolingTower",
+                            DeviceModel::HeatExchanger { .. } => "HeatExchanger",
+                            DeviceModel::ControlCabinet { .. } => "ControlCabinet",
+                            _ => "Device",
                         };
                         rsx! {
                             AxisFields {
@@ -1040,7 +1053,13 @@ fn Inspector3D(screen_id: String, node: DeviceNode) -> Element {
                                     let mut node = node.clone();
                                     move |(axis, value): (usize, f32)| {
                                         match &mut node.model {
-                                            DeviceModel::Ahu { size, .. } | DeviceModel::Fan { size, .. } | DeviceModel::Pump { size, .. } => size[axis] = value.max(0.01),
+                                            DeviceModel::Ahu { size, .. }
+                                            | DeviceModel::Fan { size, .. }
+                                            | DeviceModel::Pump { size, .. }
+                                            | DeviceModel::Chiller { size, .. }
+                                            | DeviceModel::CoolingTower { size, .. }
+                                            | DeviceModel::HeatExchanger { size, .. }
+                                            | DeviceModel::ControlCabinet { size, .. } => size[axis] = value.max(0.01),
                                             _ => {}
                                         }
                                         update_3d(&screen_id, node.clone());
@@ -1056,7 +1075,13 @@ fn Inspector3D(screen_id: String, node: DeviceNode) -> Element {
                                     let mut node = node.clone();
                                     move |value: String| {
                                         match &mut node.model {
-                                            DeviceModel::Ahu { color, .. } | DeviceModel::Fan { color, .. } | DeviceModel::Pump { color, .. } => *color = HexColor(value.clone()),
+                                            DeviceModel::Ahu { color, .. }
+                                            | DeviceModel::Fan { color, .. }
+                                            | DeviceModel::Pump { color, .. }
+                                            | DeviceModel::Chiller { color, .. }
+                                            | DeviceModel::CoolingTower { color, .. }
+                                            | DeviceModel::HeatExchanger { color, .. }
+                                            | DeviceModel::ControlCabinet { color, .. } => *color = HexColor(value.clone()),
                                             _ => {}
                                         }
                                         update_3d(&screen_id, node.clone());
@@ -1954,6 +1979,10 @@ fn equipment_value(equipment: EquipmentKind) -> &'static str {
         EquipmentKind::Pump => "pump",
         EquipmentKind::Ahu => "ahu",
         EquipmentKind::Valve => "valve",
+        EquipmentKind::Chiller => "chiller",
+        EquipmentKind::CoolingTower => "cooling-tower",
+        EquipmentKind::HeatExchanger => "heat-exchanger",
+        EquipmentKind::ControlCabinet => "control-cabinet",
     }
 }
 
@@ -1962,6 +1991,10 @@ fn parse_equipment(value: &str) -> EquipmentKind {
         "pump" => EquipmentKind::Pump,
         "ahu" => EquipmentKind::Ahu,
         "valve" => EquipmentKind::Valve,
+        "chiller" => EquipmentKind::Chiller,
+        "cooling-tower" => EquipmentKind::CoolingTower,
+        "heat-exchanger" => EquipmentKind::HeatExchanger,
+        "control-cabinet" => EquipmentKind::ControlCabinet,
         _ => EquipmentKind::Fan,
     }
 }

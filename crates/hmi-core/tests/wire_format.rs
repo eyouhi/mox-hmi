@@ -131,6 +131,44 @@ fn button_action_uses_type_tag() {
 }
 
 #[test]
+fn complex_equipment_models_use_snake_case_tags() {
+    let color = HexColor("#23434d".into());
+    for (model, expected) in [
+        (
+            DeviceModel::Chiller {
+                size: [3.0, 2.0, 2.0],
+                color: color.clone(),
+            },
+            "\"type\":\"chiller\"",
+        ),
+        (
+            DeviceModel::CoolingTower {
+                size: [2.0, 3.0, 2.0],
+                color: color.clone(),
+            },
+            "\"type\":\"cooling_tower\"",
+        ),
+        (
+            DeviceModel::HeatExchanger {
+                size: [2.4, 1.6, 1.2],
+                color: color.clone(),
+            },
+            "\"type\":\"heat_exchanger\"",
+        ),
+        (
+            DeviceModel::ControlCabinet {
+                size: [1.2, 2.0, 0.8],
+                color,
+            },
+            "\"type\":\"control_cabinet\"",
+        ),
+    ] {
+        let json = serde_json::to_string(&model).unwrap();
+        assert!(json.contains(expected), "missing {expected} in {json}");
+    }
+}
+
+#[test]
 fn editor_commands_round_trip_with_snake_case_types() {
     let command = EditorCommand::RenameScreen {
         screen_id: "screen.bas_2d".into(),

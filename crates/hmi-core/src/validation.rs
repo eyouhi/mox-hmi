@@ -290,7 +290,11 @@ fn validate_device_model(errors: &mut Vec<ValidationIssue>, path: &str, model: &
     match model {
         DeviceModel::Ahu { size, color }
         | DeviceModel::Fan { size, color }
-        | DeviceModel::Pump { size, color } => {
+        | DeviceModel::Pump { size, color }
+        | DeviceModel::Chiller { size, color }
+        | DeviceModel::CoolingTower { size, color }
+        | DeviceModel::HeatExchanger { size, color }
+        | DeviceModel::ControlCabinet { size, color } => {
             positive_vec(errors, path, *size);
             check_color(errors, path, color);
         }

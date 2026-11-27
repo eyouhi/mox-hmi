@@ -313,7 +313,11 @@ fn ComponentPalette() -> Element {
                     PaletteButton { test_id: "add-bar-gauge", label: "仪表条", glyph: "▤", kind: "bar-gauge" }
                     PaletteButton { test_id: "add-button", label: "按钮", glyph: "◉", kind: "button" }
                     PaletteButton { test_id: "add-pipe", label: "管线", glyph: "┄", kind: "pipe" }
-                    PaletteButton { test_id: "add-equipment-symbol", label: "设备", glyph: "◇", kind: "equipment" }
+                    PaletteButton { test_id: "add-equipment-symbol", label: "风机", glyph: "◇", kind: "equipment" }
+                    PaletteButton { test_id: "add-2d-chiller", label: "冷机", glyph: "▥", kind: "chiller" }
+                    PaletteButton { test_id: "add-2d-cooling-tower", label: "冷却塔", glyph: "⌂", kind: "cooling-tower" }
+                    PaletteButton { test_id: "add-2d-heat-exchanger", label: "换热器", glyph: "≋", kind: "heat-exchanger" }
+                    PaletteButton { test_id: "add-2d-control-cabinet", label: "控制柜", glyph: "▤", kind: "control-cabinet" }
                 } else {
                     PaletteButton { test_id: "add-ahu", label: "AHU", glyph: "▣", kind: "ahu" }
                     PaletteButton { test_id: "add-fan", label: "风机", glyph: "◌", kind: "fan" }
@@ -321,6 +325,10 @@ fn ComponentPalette() -> Element {
                     PaletteButton { test_id: "add-duct", label: "风管", glyph: "▤", kind: "duct" }
                     PaletteButton { test_id: "add-pipe-3d", label: "水管", glyph: "━", kind: "pipe-3d" }
                     PaletteButton { test_id: "add-valve", label: "阀门", glyph: "◎", kind: "valve" }
+                    PaletteButton { test_id: "add-chiller", label: "冷机", glyph: "▥", kind: "chiller" }
+                    PaletteButton { test_id: "add-cooling-tower", label: "冷却塔", glyph: "⌂", kind: "cooling-tower" }
+                    PaletteButton { test_id: "add-heat-exchanger", label: "换热器", glyph: "≋", kind: "heat-exchanger" }
+                    PaletteButton { test_id: "add-control-cabinet", label: "控制柜", glyph: "▤", kind: "control-cabinet" }
                 }
             }
             if gamepad_connected {

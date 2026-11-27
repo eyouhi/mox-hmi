@@ -165,7 +165,23 @@ pub const PALETTE_2D: &[PaletteEntry] = &[
     },
     PaletteEntry {
         kind: "equipment",
-        label: "设备",
+        label: "风机",
+    },
+    PaletteEntry {
+        kind: "chiller",
+        label: "冷水机组",
+    },
+    PaletteEntry {
+        kind: "cooling-tower",
+        label: "冷却塔",
+    },
+    PaletteEntry {
+        kind: "heat-exchanger",
+        label: "板式换热器",
+    },
+    PaletteEntry {
+        kind: "control-cabinet",
+        label: "控制柜",
     },
 ];
 
@@ -193,6 +209,22 @@ pub const PALETTE_3D: &[PaletteEntry] = &[
     PaletteEntry {
         kind: "valve",
         label: "阀门",
+    },
+    PaletteEntry {
+        kind: "chiller",
+        label: "冷水机组",
+    },
+    PaletteEntry {
+        kind: "cooling-tower",
+        label: "冷却塔",
+    },
+    PaletteEntry {
+        kind: "heat-exchanger",
+        label: "板式换热器",
+    },
+    PaletteEntry {
+        kind: "control-cabinet",
+        label: "控制柜",
     },
 ];
 
@@ -1601,6 +1633,10 @@ fn add_2d_palette_node(
         "bar-gauge" => (260.0, 96.0, "新仪表条"),
         "button" => (240.0, 72.0, "新按钮"),
         "pipe" => (260.0, 24.0, "新管线"),
+        "chiller" => (250.0, 160.0, "冷水机组"),
+        "cooling-tower" => (170.0, 210.0, "冷却塔"),
+        "heat-exchanger" => (220.0, 140.0, "板式换热器"),
+        "control-cabinet" => (120.0, 190.0, "控制柜"),
         _ => (180.0, 120.0, "新设备"),
     };
     let placement = next_2d_placement(nodes, view_center_2d(), width, height);
@@ -1647,6 +1683,22 @@ fn add_2d_palette_node(
             points: vec![[0.0, height * 0.5], [width, height * 0.5]],
             thickness: 8.0,
             color: HexColor("#2d6d77".to_string()),
+        },
+        "chiller" => Widget2D::EquipmentSymbol {
+            equipment: EquipmentKind::Chiller,
+            label: "CH-01".to_string(),
+        },
+        "cooling-tower" => Widget2D::EquipmentSymbol {
+            equipment: EquipmentKind::CoolingTower,
+            label: "CT-01".to_string(),
+        },
+        "heat-exchanger" => Widget2D::EquipmentSymbol {
+            equipment: EquipmentKind::HeatExchanger,
+            label: "HX-01".to_string(),
+        },
+        "control-cabinet" => Widget2D::EquipmentSymbol {
+            equipment: EquipmentKind::ControlCabinet,
+            label: "CP-01".to_string(),
         },
         _ => Widget2D::EquipmentSymbol {
             equipment: EquipmentKind::Fan,
@@ -1722,6 +1774,38 @@ fn add_3d_palette_node(
                 length: 3.0,
                 diameter: 0.18,
                 color: HexColor("#2d6d77".to_string()),
+            },
+        ),
+        "chiller" => (
+            "冷水机组-新增",
+            1.0,
+            DeviceModel::Chiller {
+                size: [3.2, 2.0, 2.2],
+                color: HexColor("#23434d".to_string()),
+            },
+        ),
+        "cooling-tower" => (
+            "冷却塔-新增",
+            1.6,
+            DeviceModel::CoolingTower {
+                size: [2.2, 3.2, 2.2],
+                color: HexColor("#264850".to_string()),
+            },
+        ),
+        "heat-exchanger" => (
+            "板式换热器-新增",
+            0.8,
+            DeviceModel::HeatExchanger {
+                size: [2.4, 1.6, 1.2],
+                color: HexColor("#31505a".to_string()),
+            },
+        ),
+        "control-cabinet" => (
+            "控制柜-新增",
+            1.0,
+            DeviceModel::ControlCabinet {
+                size: [1.4, 2.0, 0.9],
+                color: HexColor("#2b4a54".to_string()),
             },
         ),
         _ => (
@@ -1845,7 +1929,11 @@ fn device_footprint_radius(model: &DeviceModel, scale: [f32; 3]) -> f32 {
     let (width, depth) = match model {
         DeviceModel::Ahu { size, .. }
         | DeviceModel::Fan { size, .. }
-        | DeviceModel::Pump { size, .. } => (size[0].abs() * sx, size[2].abs() * sz),
+        | DeviceModel::Pump { size, .. }
+        | DeviceModel::Chiller { size, .. }
+        | DeviceModel::CoolingTower { size, .. }
+        | DeviceModel::HeatExchanger { size, .. }
+        | DeviceModel::ControlCabinet { size, .. } => (size[0].abs() * sx, size[2].abs() * sz),
         DeviceModel::Duct {
             length, diameter, ..
         }
@@ -1916,8 +2004,9 @@ pub fn shutdown_for_tests() {
 #[cfg(test)]
 mod tests {
     use super::{
-        GamepadStatus, PLACEMENT_GAP, active_screen, device_footprint_radius, initialize,
-        next_2d_placement, next_3d_position, overlaps_nodes_2d, project, shutdown_for_tests,
+        GamepadStatus, PALETTE_2D, PALETTE_3D, PLACEMENT_GAP, active_screen,
+        device_footprint_radius, initialize, next_2d_placement, next_3d_position,
+        overlaps_nodes_2d, project, shutdown_for_tests,
     };
     use hmi_core::{DeviceModel, DeviceNode, HexColor, Rect, UiNode, Widget2D};
 
@@ -2042,6 +2131,19 @@ mod tests {
                 position[0],
                 position[2],
             ));
+        }
+    }
+
+    #[test]
+    fn palettes_include_complex_equipment() {
+        for kind in [
+            "chiller",
+            "cooling-tower",
+            "heat-exchanger",
+            "control-cabinet",
+        ] {
+            assert!(PALETTE_2D.iter().any(|entry| entry.kind == kind), "{kind}");
+            assert!(PALETTE_3D.iter().any(|entry| entry.kind == kind), "{kind}");
         }
     }
 }

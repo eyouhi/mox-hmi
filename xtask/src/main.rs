@@ -793,10 +793,26 @@ fn ensure_dx() -> Result<(), String> {
 }
 
 fn workspace_root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .expect("xtask 必须位于 workspace 根目录")
-        .to_path_buf()
+    let starts = [
+        env::current_dir().ok(),
+        env::current_exe()
+            .ok()
+            .and_then(|path| path.parent().map(Path::to_path_buf)),
+    ];
+    starts
+        .into_iter()
+        .flatten()
+        .find_map(|start| find_workspace_root(&start))
+        .expect("xtask 无法从当前目录或可执行文件位置定位 workspace 根目录")
+}
+
+fn find_workspace_root(start: &Path) -> Option<PathBuf> {
+    start.ancestors().find_map(|dir| {
+        let manifest = fs::read_to_string(dir.join("Cargo.toml")).ok()?;
+        (manifest.lines().any(|line| line.trim() == "[workspace]")
+            && dir.join("xtask/Cargo.toml").is_file())
+        .then(|| dir.to_path_buf())
+    })
 }
 
 fn take_flag(args: &mut Vec<String>, flag: &str) -> bool {
@@ -860,7 +876,7 @@ fn print_help() {
 
 #[cfg(test)]
 mod tests {
-    use super::{clean_workspace, inject_runtime_marker};
+    use super::{clean_workspace, find_workspace_root, inject_runtime_marker};
     use std::{env, fs, process};
 
     #[test]
@@ -898,6 +914,25 @@ mod tests {
         assert!(!root.join("dist").exists());
         assert!(root.join("Cargo.toml").is_file());
         assert!(root.join("keep").is_dir());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn workspace_root_is_discovered_from_nested_directory() {
+        let root = env::temp_dir().join(format!("mox-hmi-root-test-{}", process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(root.join("xtask")).unwrap();
+        fs::create_dir_all(root.join("apps/studio")).unwrap();
+        fs::write(root.join("Cargo.toml"), b"[workspace]\nmembers = []\n").unwrap();
+        fs::write(
+            root.join("xtask/Cargo.toml"),
+            b"[package]\nname = \"xtask\"\n",
+        )
+        .unwrap();
+
+        let discovered = find_workspace_root(&root.join("apps/studio"));
+
+        assert_eq!(discovered.as_deref(), Some(root.as_path()));
         fs::remove_dir_all(root).unwrap();
     }
 }

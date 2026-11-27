@@ -63,6 +63,10 @@ pub enum EquipmentKind {
     Pump,
     Ahu,
     Valve,
+    Chiller,
+    CoolingTower,
+    HeatExchanger,
+    ControlCabinet,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -211,6 +215,22 @@ pub enum DeviceModel {
     },
     Valve {
         size: f32,
+        color: HexColor,
+    },
+    Chiller {
+        size: [f32; 3],
+        color: HexColor,
+    },
+    CoolingTower {
+        size: [f32; 3],
+        color: HexColor,
+    },
+    HeatExchanger {
+        size: [f32; 3],
+        color: HexColor,
+    },
+    ControlCabinet {
+        size: [f32; 3],
         color: HexColor,
     },
     Glb {

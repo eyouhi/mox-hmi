@@ -211,6 +211,18 @@ pub(crate) fn spawn_device(
             DeviceModel::Valve { size, color } => {
                 spawn_valve(parent, meshes, materials, node, *size, color, &mut visual)
             }
+            DeviceModel::Chiller { size, color } => {
+                spawn_chiller(parent, meshes, materials, node, *size, color, &mut visual)
+            }
+            DeviceModel::CoolingTower { size, color } => {
+                spawn_cooling_tower(parent, meshes, materials, node, *size, color, &mut visual)
+            }
+            DeviceModel::HeatExchanger { size, color } => {
+                spawn_heat_exchanger(parent, meshes, materials, node, *size, color, &mut visual)
+            }
+            DeviceModel::ControlCabinet { size, color } => {
+                spawn_control_cabinet(parent, meshes, materials, node, *size, color, &mut visual)
+            }
             DeviceModel::Glb { path } => {
                 spawn_glb(parent, meshes, materials, asset_server, node, path)
             }
@@ -244,7 +256,11 @@ fn label_height(model: &DeviceModel) -> f32 {
     match model {
         DeviceModel::Ahu { size, .. }
         | DeviceModel::Fan { size, .. }
-        | DeviceModel::Pump { size, .. } => size[1],
+        | DeviceModel::Pump { size, .. }
+        | DeviceModel::Chiller { size, .. }
+        | DeviceModel::CoolingTower { size, .. }
+        | DeviceModel::HeatExchanger { size, .. }
+        | DeviceModel::ControlCabinet { size, .. } => size[1],
         DeviceModel::Duct { diameter, .. } | DeviceModel::Pipe { diameter, .. } => *diameter,
         DeviceModel::Valve { size, .. } => *size,
         DeviceModel::Glb { .. } => 2.0,
@@ -532,6 +548,595 @@ fn spawn_valve(
         .id();
     visual.materials.push(wheel_material);
     visual.progress = Some(wheel);
+}
+
+fn spawn_detail_part(
+    parent: &mut ChildSpawnerCommands,
+    meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<StandardMaterial>,
+    node_id: &str,
+    mesh: impl Into<Mesh>,
+    color: Color,
+    transform: Transform,
+) -> Entity {
+    parent
+        .spawn((
+            Mesh3d(meshes.add(mesh.into())),
+            MeshMaterial3d(standard_material(materials, color)),
+            transform,
+            HmiPickable {
+                node_id: node_id.to_string(),
+            },
+        ))
+        .id()
+}
+
+fn spawn_chiller(
+    parent: &mut ChildSpawnerCommands,
+    meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<StandardMaterial>,
+    node: &DeviceNode,
+    size: [f32; 3],
+    color: &HexColor,
+    visual: &mut DeviceVisual,
+) {
+    let [width, height, depth] = size;
+    let body = standard_material(materials, hex_color(color));
+    spawn_part(
+        parent,
+        meshes,
+        Cuboid::new(width * 0.9, height * 0.64, depth * 0.82),
+        body,
+        &node.id,
+        Transform::from_xyz(0.0, -height * 0.04, 0.0),
+        &mut visual.materials,
+    );
+
+    let frame = Color::srgb(0.05, 0.12, 0.14);
+    for z in [-depth * 0.32, depth * 0.32] {
+        spawn_detail_part(
+            parent,
+            meshes,
+            materials,
+            &node.id,
+            Cuboid::new(width * 0.98, height * 0.08, depth * 0.12),
+            frame,
+            Transform::from_xyz(0.0, -height * 0.46, z),
+        );
+    }
+
+    let coil = Color::srgb(0.035, 0.09, 0.105);
+    spawn_detail_part(
+        parent,
+        meshes,
+        materials,
+        &node.id,
+        Cuboid::new(width * 0.58, height * 0.44, 0.035),
+        coil,
+        Transform::from_xyz(-width * 0.08, -height * 0.03, depth * 0.415),
+    );
+    for index in 0..6 {
+        let y = -height * 0.21 + index as f32 * height * 0.075;
+        spawn_detail_part(
+            parent,
+            meshes,
+            materials,
+            &node.id,
+            Cuboid::new(width * 0.54, height * 0.018, 0.025),
+            Color::srgb(0.18, 0.43, 0.46),
+            Transform::from_xyz(-width * 0.08, y, depth * 0.44),
+        );
+    }
+
+    let compressor = Color::srgb(0.16, 0.38, 0.42);
+    let compressor_radius = height * 0.095;
+    let compressor_length = width * 0.28;
+    for x in [-width * 0.23, width * 0.23] {
+        spawn_detail_part(
+            parent,
+            meshes,
+            materials,
+            &node.id,
+            Cylinder::new(compressor_radius, compressor_length),
+            compressor,
+            Transform::from_xyz(x, height * 0.29, -depth * 0.12)
+                .with_rotation(Quat::from_rotation_z(std::f32::consts::FRAC_PI_2)),
+        );
+        for offset in [-compressor_length * 0.34, compressor_length * 0.34] {
+            spawn_detail_part(
+                parent,
+                meshes,
+                materials,
+                &node.id,
+                Torus::new(compressor_radius * 0.82, compressor_radius * 1.04),
+                Color::srgb(0.08, 0.19, 0.21),
+                Transform::from_xyz(x + offset, height * 0.29, -depth * 0.12)
+                    .with_rotation(Quat::from_rotation_z(std::f32::consts::FRAC_PI_2)),
+            );
+        }
+    }
+
+    let fan_y = height * 0.4;
+    for x in [-width * 0.23, width * 0.23] {
+        spawn_detail_part(
+            parent,
+            meshes,
+            materials,
+            &node.id,
+            Cylinder::new(height * 0.15, height * 0.06),
+            Color::srgb(0.035, 0.085, 0.1),
+            Transform::from_xyz(x, fan_y, depth * 0.18),
+        );
+        spawn_detail_part(
+            parent,
+            meshes,
+            materials,
+            &node.id,
+            Torus::new(height * 0.13, height * 0.155),
+            Color::srgb(0.22, 0.56, 0.58),
+            Transform::from_xyz(x, fan_y + height * 0.035, depth * 0.18),
+        );
+        let rotor = spawn_rotor_group(parent, x, fan_y + height * 0.045, depth * 0.18);
+        commands_add_blades(
+            parent,
+            meshes,
+            materials,
+            rotor,
+            height * 0.11,
+            &node.id,
+            RotorAxis::LocalY,
+        );
+        visual.rotors.push(rotor);
+    }
+
+    spawn_detail_part(
+        parent,
+        meshes,
+        materials,
+        &node.id,
+        Cuboid::new(width * 0.14, height * 0.19, 0.035),
+        Color::srgb(0.035, 0.08, 0.095),
+        Transform::from_xyz(width * 0.33, -height * 0.03, depth * 0.425),
+    );
+    for (index, light) in [
+        Color::srgb(0.18, 0.9, 0.79),
+        Color::srgb(0.95, 0.68, 0.2),
+        Color::srgb(0.2, 0.8, 0.95),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        spawn_detail_part(
+            parent,
+            meshes,
+            materials,
+            &node.id,
+            Cuboid::new(width * 0.018, height * 0.018, 0.02),
+            light,
+            Transform::from_xyz(
+                width * 0.3 + index as f32 * width * 0.026,
+                height * 0.02,
+                depth * 0.45,
+            ),
+        );
+    }
+
+    let pipe = Color::srgb(0.12, 0.3, 0.33);
+    for side in [-1.0_f32, 1.0] {
+        spawn_detail_part(
+            parent,
+            meshes,
+            materials,
+            &node.id,
+            Cylinder::new(height * 0.055, width * 0.08),
+            pipe,
+            Transform::from_xyz(side * width * 0.46, -height * 0.16, 0.0)
+                .with_rotation(Quat::from_rotation_z(std::f32::consts::FRAC_PI_2)),
+        );
+        spawn_detail_part(
+            parent,
+            meshes,
+            materials,
+            &node.id,
+            Torus::new(height * 0.055, height * 0.075),
+            Color::srgb(0.22, 0.55, 0.57),
+            Transform::from_xyz(side * width * 0.5, -height * 0.16, 0.0)
+                .with_rotation(Quat::from_rotation_z(std::f32::consts::FRAC_PI_2)),
+        );
+    }
+}
+
+fn spawn_cooling_tower(
+    parent: &mut ChildSpawnerCommands,
+    meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<StandardMaterial>,
+    node: &DeviceNode,
+    size: [f32; 3],
+    color: &HexColor,
+    visual: &mut DeviceVisual,
+) {
+    let [width, height, depth] = size;
+    let foot = width.min(depth);
+    let shell_height = height * 0.54;
+    let bottom_radius = foot * 0.38;
+    let top_radius = foot * 0.3;
+    let shell_center_y = -height * 0.07;
+    let body = standard_material(materials, hex_color(color));
+    spawn_part(
+        parent,
+        meshes,
+        ConicalFrustum {
+            radius_top: top_radius,
+            radius_bottom: bottom_radius,
+            height: shell_height,
+        },
+        body,
+        &node.id,
+        Transform::from_xyz(0.0, shell_center_y, 0.0),
+        &mut visual.materials,
+    );
+
+    let frame = Color::srgb(0.045, 0.11, 0.13);
+    spawn_detail_part(
+        parent,
+        meshes,
+        materials,
+        &node.id,
+        Cuboid::new(width * 0.92, height * 0.08, depth * 0.92),
+        frame,
+        Transform::from_xyz(0.0, -height * 0.44, 0.0),
+    );
+    for x in [-width * 0.32, width * 0.32] {
+        for z in [-depth * 0.32, depth * 0.32] {
+            spawn_detail_part(
+                parent,
+                meshes,
+                materials,
+                &node.id,
+                Cuboid::new(width * 0.055, height * 0.2, depth * 0.055),
+                frame,
+                Transform::from_xyz(x, -height * 0.34, z),
+            );
+        }
+    }
+    spawn_detail_part(
+        parent,
+        meshes,
+        materials,
+        &node.id,
+        Cylinder::new(top_radius * 1.04, height * 0.06),
+        Color::srgb(0.06, 0.15, 0.17),
+        Transform::from_xyz(0.0, height * 0.22, 0.0),
+    );
+    spawn_detail_part(
+        parent,
+        meshes,
+        materials,
+        &node.id,
+        Cylinder::new(top_radius * 0.76, height * 0.07),
+        Color::srgb(0.025, 0.07, 0.085),
+        Transform::from_xyz(0.0, height * 0.28, 0.0),
+    );
+    spawn_detail_part(
+        parent,
+        meshes,
+        materials,
+        &node.id,
+        Torus::new(top_radius * 0.65, top_radius * 0.8),
+        Color::srgb(0.2, 0.55, 0.57),
+        Transform::from_xyz(0.0, height * 0.32, 0.0),
+    );
+    let rotor = spawn_rotor_group(parent, 0.0, height * 0.34, 0.0);
+    commands_add_blades(
+        parent,
+        meshes,
+        materials,
+        rotor,
+        top_radius * 0.6,
+        &node.id,
+        RotorAxis::LocalY,
+    );
+    visual.rotors.push(rotor);
+
+    for (y, radius) in [
+        (-height * 0.28, bottom_radius * 0.94),
+        (-height * 0.1, bottom_radius * 0.84),
+        (height * 0.08, bottom_radius * 0.74),
+    ] {
+        spawn_detail_part(
+            parent,
+            meshes,
+            materials,
+            &node.id,
+            Torus::new(radius * 0.97, radius * 1.012),
+            Color::srgb(0.13, 0.34, 0.37),
+            Transform::from_xyz(0.0, y, 0.0),
+        );
+    }
+
+    for z in [-depth * 0.07, depth * 0.07] {
+        spawn_detail_part(
+            parent,
+            meshes,
+            materials,
+            &node.id,
+            Cuboid::new(width * 0.035, height * 0.55, depth * 0.035),
+            Color::srgb(0.24, 0.58, 0.6),
+            Transform::from_xyz(-width * 0.4, -height * 0.04, z),
+        );
+    }
+    for index in 0..6 {
+        spawn_detail_part(
+            parent,
+            meshes,
+            materials,
+            &node.id,
+            Cuboid::new(width * 0.045, height * 0.018, depth * 0.16),
+            Color::srgb(0.24, 0.58, 0.6),
+            Transform::from_xyz(
+                -width * 0.4,
+                -height * 0.28 + index as f32 * height * 0.09,
+                0.0,
+            ),
+        );
+    }
+
+    spawn_detail_part(
+        parent,
+        meshes,
+        materials,
+        &node.id,
+        Cylinder::new(height * 0.028, width * 0.12),
+        Color::srgb(0.12, 0.31, 0.34),
+        Transform::from_xyz(width * 0.45, -height * 0.31, 0.0)
+            .with_rotation(Quat::from_rotation_z(std::f32::consts::FRAC_PI_2)),
+    );
+}
+
+fn spawn_heat_exchanger(
+    parent: &mut ChildSpawnerCommands,
+    meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<StandardMaterial>,
+    node: &DeviceNode,
+    size: [f32; 3],
+    color: &HexColor,
+    visual: &mut DeviceVisual,
+) {
+    let [width, height, depth] = size;
+    let base = Color::srgb(0.045, 0.11, 0.13);
+    spawn_detail_part(
+        parent,
+        meshes,
+        materials,
+        &node.id,
+        Cuboid::new(width * 0.88, height * 0.1, depth * 0.82),
+        base,
+        Transform::from_xyz(0.0, -height * 0.44, 0.0),
+    );
+    for x in [-width * 0.42, width * 0.42] {
+        spawn_detail_part(
+            parent,
+            meshes,
+            materials,
+            &node.id,
+            Cuboid::new(width * 0.06, height * 0.7, depth * 0.78),
+            Color::srgb(0.07, 0.17, 0.19),
+            Transform::from_xyz(x, 0.0, 0.0),
+        );
+    }
+    for y in [-height * 0.33, height * 0.33] {
+        for z in [-depth * 0.31, depth * 0.31] {
+            spawn_detail_part(
+                parent,
+                meshes,
+                materials,
+                &node.id,
+                Cuboid::new(width * 0.84, height * 0.055, depth * 0.07),
+                Color::srgb(0.09, 0.22, 0.24),
+                Transform::from_xyz(0.0, y, z),
+            );
+        }
+    }
+
+    let plate_count = 9;
+    let plate_span = width * 0.56;
+    let plate_material = standard_material(materials, hex_color(color));
+    for index in 0..plate_count {
+        let x = -plate_span * 0.5 + index as f32 * plate_span / (plate_count - 1) as f32;
+        spawn_part(
+            parent,
+            meshes,
+            Cuboid::new(width * 0.024, height * 0.58, depth * 0.64),
+            plate_material.clone(),
+            &node.id,
+            Transform::from_xyz(x, 0.0, 0.0),
+            &mut visual.materials,
+        );
+    }
+
+    let rod = Color::srgb(0.32, 0.62, 0.63);
+    for y in [-height * 0.31, height * 0.31] {
+        for z in [-depth * 0.29, depth * 0.29] {
+            spawn_detail_part(
+                parent,
+                meshes,
+                materials,
+                &node.id,
+                Cylinder::new(height * 0.016, width * 0.92),
+                rod,
+                Transform::from_xyz(0.0, y, z)
+                    .with_rotation(Quat::from_rotation_z(std::f32::consts::FRAC_PI_2)),
+            );
+        }
+    }
+
+    let nozzle = Color::srgb(0.14, 0.36, 0.39);
+    let flange = Color::srgb(0.26, 0.62, 0.63);
+    for x in [-width * 0.2, width * 0.2] {
+        for y in [-height * 0.2, height * 0.2] {
+            spawn_detail_part(
+                parent,
+                meshes,
+                materials,
+                &node.id,
+                Cylinder::new(height * 0.06, height * 0.1),
+                nozzle,
+                Transform::from_xyz(x, y, depth * 0.42)
+                    .with_rotation(Quat::from_rotation_x(std::f32::consts::FRAC_PI_2)),
+            );
+            spawn_detail_part(
+                parent,
+                meshes,
+                materials,
+                &node.id,
+                Torus::new(height * 0.065, height * 0.085),
+                flange,
+                Transform::from_xyz(x, y, depth * 0.49)
+                    .with_rotation(Quat::from_rotation_x(std::f32::consts::FRAC_PI_2)),
+            );
+        }
+    }
+    spawn_detail_part(
+        parent,
+        meshes,
+        materials,
+        &node.id,
+        Cylinder::new(height * 0.07, height * 0.035),
+        Color::srgb(0.7, 0.86, 0.85),
+        Transform::from_xyz(width * 0.29, height * 0.2, depth * 0.445)
+            .with_rotation(Quat::from_rotation_x(std::f32::consts::FRAC_PI_2)),
+    );
+}
+
+fn spawn_control_cabinet(
+    parent: &mut ChildSpawnerCommands,
+    meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<StandardMaterial>,
+    node: &DeviceNode,
+    size: [f32; 3],
+    color: &HexColor,
+    visual: &mut DeviceVisual,
+) {
+    let [width, height, depth] = size;
+    let dark = Color::srgb(0.04, 0.1, 0.12);
+    spawn_detail_part(
+        parent,
+        meshes,
+        materials,
+        &node.id,
+        Cuboid::new(width * 0.92, height * 0.07, depth * 0.88),
+        dark,
+        Transform::from_xyz(0.0, -height * 0.45, 0.0),
+    );
+    let body = standard_material(materials, hex_color(color));
+    spawn_part(
+        parent,
+        meshes,
+        Cuboid::new(width * 0.82, height * 0.82, depth * 0.74),
+        body,
+        &node.id,
+        Transform::from_xyz(0.0, 0.02 * height, 0.0),
+        &mut visual.materials,
+    );
+    spawn_detail_part(
+        parent,
+        meshes,
+        materials,
+        &node.id,
+        Cuboid::new(width * 0.9, height * 0.05, depth * 0.82),
+        Color::srgb(0.09, 0.22, 0.24),
+        Transform::from_xyz(0.0, height * 0.44, 0.0),
+    );
+
+    let front = depth * 0.375;
+    for x in [-width * 0.2, width * 0.2] {
+        spawn_detail_part(
+            parent,
+            meshes,
+            materials,
+            &node.id,
+            Cuboid::new(width * 0.36, height * 0.72, 0.025),
+            Color::srgb(0.08, 0.2, 0.22),
+            Transform::from_xyz(x, 0.01 * height, front),
+        );
+        spawn_detail_part(
+            parent,
+            meshes,
+            materials,
+            &node.id,
+            Cylinder::new(height * 0.015, height * 0.09),
+            Color::srgb(0.42, 0.76, 0.74),
+            Transform::from_xyz(x + width * 0.12, 0.0, front + 0.03)
+                .with_rotation(Quat::from_rotation_x(std::f32::consts::FRAC_PI_2)),
+        );
+    }
+
+    spawn_detail_part(
+        parent,
+        meshes,
+        materials,
+        &node.id,
+        Cuboid::new(width * 0.34, height * 0.14, 0.03),
+        Color::srgb(0.02, 0.055, 0.065),
+        Transform::from_xyz(0.0, height * 0.23, front + 0.018),
+    );
+    for (index, light) in [
+        Color::srgb(0.2, 0.95, 0.8),
+        Color::srgb(0.95, 0.7, 0.2),
+        Color::srgb(0.26, 0.72, 0.95),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        spawn_detail_part(
+            parent,
+            meshes,
+            materials,
+            &node.id,
+            Cylinder::new(height * 0.014, 0.02),
+            light,
+            Transform::from_xyz(
+                -width * 0.12 + index as f32 * width * 0.12,
+                height * 0.08,
+                front + 0.025,
+            )
+            .with_rotation(Quat::from_rotation_x(std::f32::consts::FRAC_PI_2)),
+        );
+    }
+
+    for index in 0..5 {
+        spawn_detail_part(
+            parent,
+            meshes,
+            materials,
+            &node.id,
+            Cuboid::new(width * 0.28, height * 0.012, 0.025),
+            Color::srgb(0.19, 0.48, 0.5),
+            Transform::from_xyz(
+                0.0,
+                -height * 0.28 + index as f32 * height * 0.032,
+                front + 0.02,
+            ),
+        );
+    }
+    spawn_detail_part(
+        parent,
+        meshes,
+        materials,
+        &node.id,
+        Cuboid::new(width * 0.08, height * 0.05, 0.02),
+        Color::srgb(0.8, 0.63, 0.18),
+        Transform::from_xyz(width * 0.28, -height * 0.28, front + 0.025),
+    );
+    spawn_detail_part(
+        parent,
+        meshes,
+        materials,
+        &node.id,
+        Cylinder::new(width * 0.022, height * 0.78),
+        Color::srgb(0.1, 0.25, 0.27),
+        Transform::from_xyz(-width * 0.45, -0.02 * height, -depth * 0.18),
+    );
 }
 
 fn spawn_glb(
