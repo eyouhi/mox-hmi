@@ -1,6 +1,6 @@
 use super::input::{self, GamepadState, PadButton};
 use super::plugin::{CachedProject, HmiCameras};
-use super::three_d::{HoveredThreeD, ThreeDVisualIndex};
+use super::three_d::{HoveredThreeD, THREE_D_ROOM_SIZE, ThreeDVisualIndex};
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 use hmi_core::{DeviceModel, DeviceNode, EditorCommand, Screen};
@@ -535,6 +535,36 @@ pub fn draw_three_d_hover(
             &corners,
             scale,
             Color::srgba(0.35, 0.88, 0.98, alpha),
+        );
+    }
+}
+
+pub fn draw_three_d_ground_grid(cached: Res<CachedProject>, mut gizmos: Gizmos) {
+    if !cached.is_three_d() || crate::bridge::WORKSPACE_MODE() == crate::bridge::WorkspaceMode::Run
+    {
+        return;
+    }
+    let grid_minor = Color::srgba(0.12, 0.25, 0.29, 0.18);
+    let grid_major = Color::srgba(0.18, 0.38, 0.42, 0.25);
+    let half = THREE_D_ROOM_SIZE * 0.5;
+    let y = 0.018;
+    let extent = half as i32;
+    for step in -extent..=extent {
+        let offset = step as f32;
+        let color = if step.rem_euclid(4) == 0 {
+            grid_major
+        } else {
+            grid_minor
+        };
+        gizmos.line(
+            Vec3::new(offset, y, -half),
+            Vec3::new(offset, y, half),
+            color,
+        );
+        gizmos.line(
+            Vec3::new(-half, y, offset),
+            Vec3::new(half, y, offset),
+            color,
         );
     }
 }

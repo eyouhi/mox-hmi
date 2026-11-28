@@ -435,6 +435,8 @@ fn spawn_pipe(
 ) -> PipeVisual {
     let material = color_material(materials, color);
     material_list.push(material.clone());
+    let casing = color_material(materials, Color::srgb(0.035, 0.09, 0.105));
+    let highlight = color_material(materials, Color::srgb(0.27, 0.56, 0.59));
     let mut segments = Vec::with_capacity(points.len().saturating_sub(1));
     for segment in points.windows(2) {
         let start = local_design_to_world(segment[0], width, height);
@@ -443,12 +445,34 @@ fn spawn_pipe(
         let base_length = delta.length().max(0.001);
         let entity = parent
             .spawn((
-                Mesh2d(meshes.add(Rectangle::new(base_length, thickness))),
-                MeshMaterial2d(material.clone()),
                 Transform::from_xyz((start.x + end.x) * 0.5, (start.y + end.y) * 0.5, 0.15)
                     .with_rotation(Quat::from_rotation_z(delta.y.atan2(delta.x))),
+                Visibility::Inherited,
             ))
             .id();
+        parent
+            .commands()
+            .entity(entity)
+            .with_children(|segment_parent| {
+                segment_parent.spawn((
+                    Mesh2d(meshes.add(Rectangle::new(base_length, thickness * 1.36))),
+                    MeshMaterial2d(casing.clone()),
+                    Transform::from_xyz(0.0, 0.0, -0.004),
+                ));
+                segment_parent.spawn((
+                    Mesh2d(meshes.add(Rectangle::new(base_length, thickness))),
+                    MeshMaterial2d(material.clone()),
+                    Transform::from_xyz(0.0, 0.0, 0.0),
+                ));
+                segment_parent.spawn((
+                    Mesh2d(meshes.add(Rectangle::new(
+                        base_length * 0.96,
+                        (thickness * 0.16).max(1.2),
+                    ))),
+                    MeshMaterial2d(highlight.clone()),
+                    Transform::from_xyz(0.0, thickness * 0.22, 0.006),
+                ));
+            });
         segments.push(PipeSegmentVisual {
             entity,
             base_length,
@@ -459,11 +483,30 @@ fn spawn_pipe(
         let local = local_design_to_world(*point, width, height);
         let entity = parent
             .spawn((
-                Mesh2d(meshes.add(Circle::new(thickness * 0.5))),
-                MeshMaterial2d(material.clone()),
                 Transform::from_xyz(local.x, local.y, 0.16),
+                Visibility::Inherited,
             ))
             .id();
+        parent
+            .commands()
+            .entity(entity)
+            .with_children(|joint_parent| {
+                joint_parent.spawn((
+                    Mesh2d(meshes.add(Circle::new(thickness * 0.78))),
+                    MeshMaterial2d(casing.clone()),
+                    Transform::from_xyz(0.0, 0.0, 0.0),
+                ));
+                joint_parent.spawn((
+                    Mesh2d(meshes.add(Circle::new(thickness * 0.55))),
+                    MeshMaterial2d(material.clone()),
+                    Transform::from_xyz(0.0, 0.0, 0.005),
+                ));
+                joint_parent.spawn((
+                    Mesh2d(meshes.add(Circle::new((thickness * 0.16).max(1.2)))),
+                    MeshMaterial2d(highlight.clone()),
+                    Transform::from_xyz(0.0, thickness * 0.16, 0.01),
+                ));
+            });
         joints.push(entity);
     }
     PipeVisual { segments, joints }
@@ -512,79 +555,607 @@ fn spawn_equipment(
 
     match equipment {
         EquipmentKind::Fan => {
-            let center = Vec2::new(0.0, 8.0);
+            let center = Vec2::new(0.0, height * 0.06);
             let radius = (height * 0.3).clamp(22.0, 42.0);
-            parent.spawn((
-                Mesh2d(meshes.add(Circle::new(radius))),
-                MeshMaterial2d(color_material(materials, inner_color)),
-                Transform::from_xyz(center.x, center.y, 0.1),
-            ));
+            let housing_width = width * 0.82;
+            let housing_height = height * 0.68;
+            spawn_detail_rect(
+                parent,
+                meshes,
+                materials,
+                housing_width + 6.0,
+                housing_height + 6.0,
+                0.0,
+                center.y,
+                0.05,
+                Color::srgb(0.05, 0.13, 0.15),
+            );
+            spawn_detail_rect(
+                parent,
+                meshes,
+                materials,
+                housing_width,
+                housing_height,
+                0.0,
+                center.y,
+                0.06,
+                Color::srgb(0.15, 0.34, 0.38),
+            );
+            spawn_detail_rect(
+                parent,
+                meshes,
+                materials,
+                housing_width - 6.0,
+                housing_height - 6.0,
+                0.0,
+                center.y,
+                0.07,
+                inner_color,
+            );
+            for (sx, sy) in [(-1.0_f32, 1.0_f32), (1.0, 1.0), (-1.0, -1.0), (1.0, -1.0)] {
+                spawn_detail_circle(
+                    parent,
+                    meshes,
+                    materials,
+                    1.9,
+                    sx * (housing_width * 0.5 - 5.0),
+                    center.y + sy * (housing_height * 0.5 - 5.0),
+                    0.11,
+                    Color::srgb(0.34, 0.66, 0.68),
+                );
+            }
+            spawn_detail_rect(
+                parent,
+                meshes,
+                materials,
+                width * 0.22,
+                height * 0.1,
+                0.0,
+                center.y + housing_height * 0.5 + height * 0.04,
+                0.08,
+                Color::srgb(0.16, 0.38, 0.42),
+            );
+            spawn_detail_rect(
+                parent,
+                meshes,
+                materials,
+                width * 0.28,
+                height * 0.025,
+                0.0,
+                center.y + housing_height * 0.5 + height * 0.088,
+                0.09,
+                Color::srgb(0.34, 0.68, 0.7),
+            );
+            spawn_detail_ring(
+                parent,
+                meshes,
+                materials,
+                radius + 1.5,
+                radius + 4.5,
+                center.x,
+                center.y,
+                0.1,
+                Color::srgb(0.24, 0.52, 0.55),
+            );
+            spawn_detail_circle(
+                parent,
+                meshes,
+                materials,
+                radius + 1.2,
+                center.x,
+                center.y,
+                0.105,
+                inner_color,
+            );
             spawn_fan_rotor(parent, meshes, materials, center, radius, rotors);
+            for x in [-width * 0.26, width * 0.26] {
+                spawn_detail_rect(
+                    parent,
+                    meshes,
+                    materials,
+                    width * 0.16,
+                    height * 0.045,
+                    x,
+                    -height * 0.32,
+                    0.08,
+                    Color::srgb(0.13, 0.3, 0.33),
+                );
+            }
         }
         EquipmentKind::Pump => {
-            let center = Vec2::new(0.0, 8.0);
-            let radius = (height * 0.27).clamp(20.0, 38.0);
-            parent.spawn((
-                Mesh2d(meshes.add(Circle::new(radius))),
-                MeshMaterial2d(color_material(materials, inner_color)),
-                Transform::from_xyz(center.x, center.y, 0.1),
-            ));
-            let rotor = parent
-                .spawn((
-                    Transform::from_xyz(center.x, center.y, 0.2),
-                    HmiRotor {
-                        axis: RotorAxis::LocalZ,
-                    },
-                    HmiSpin::default(),
-                    Visibility::Inherited,
-                ))
-                .id();
-            rotors.push(rotor);
-            parent
-                .commands()
-                .entity(rotor)
-                .with_children(|rotor_parent| {
-                    let blade = color_material(materials, Color::srgb(0.25, 0.72, 0.72));
-                    for angle in [0.0_f32, 2.094, 4.188] {
-                        rotor_parent.spawn((
-                            Mesh2d(meshes.add(Rectangle::new(radius * 0.82, 5.0))),
-                            MeshMaterial2d(blade.clone()),
-                            Transform::from_xyz(0.0, 0.0, 0.0)
-                                .with_rotation(Quat::from_rotation_z(angle)),
-                        ));
-                    }
-                });
+            let center = Vec2::new(-width * 0.13, height * 0.04);
+            let radius = (height * 0.22).clamp(20.0, 36.0);
+            spawn_detail_rect(
+                parent,
+                meshes,
+                materials,
+                width * 0.82,
+                height * 0.075,
+                0.0,
+                -height * 0.32,
+                0.07,
+                Color::srgb(0.05, 0.14, 0.16),
+            );
+            for x in [-width * 0.31, width * 0.31] {
+                spawn_detail_circle(
+                    parent,
+                    meshes,
+                    materials,
+                    2.0,
+                    x,
+                    -height * 0.32,
+                    0.1,
+                    Color::srgb(0.34, 0.66, 0.68),
+                );
+            }
+            spawn_detail_rect(
+                parent,
+                meshes,
+                materials,
+                width * 0.07,
+                height * 0.08,
+                width * 0.1,
+                height * 0.04,
+                0.08,
+                Color::srgb(0.18, 0.42, 0.45),
+            );
+            spawn_detail_rect(
+                parent,
+                meshes,
+                materials,
+                width * 0.26,
+                height * 0.36,
+                width * 0.29,
+                height * 0.05,
+                0.09,
+                Color::srgb(0.1, 0.27, 0.3),
+            );
+            spawn_detail_rect(
+                parent,
+                meshes,
+                materials,
+                width * 0.08,
+                height * 0.07,
+                width * 0.29,
+                height * 0.28,
+                0.11,
+                Color::srgb(0.17, 0.4, 0.43),
+            );
+            for index in 0..4 {
+                spawn_detail_rect(
+                    parent,
+                    meshes,
+                    materials,
+                    width * 0.2,
+                    1.6,
+                    width * 0.29,
+                    -height * 0.06 + index as f32 * height * 0.065,
+                    0.12,
+                    Color::srgb(0.22, 0.52, 0.55),
+                );
+            }
+            spawn_detail_rect(
+                parent,
+                meshes,
+                materials,
+                width * 0.17,
+                height * 0.08,
+                -width * 0.35,
+                height * 0.04,
+                0.08,
+                Color::srgb(0.16, 0.38, 0.42),
+            );
+            spawn_detail_rect(
+                parent,
+                meshes,
+                materials,
+                width * 0.055,
+                height * 0.2,
+                -width * 0.44,
+                height * 0.04,
+                0.11,
+                Color::srgb(0.32, 0.64, 0.66),
+            );
+            for y in [height * 0.11, -height * 0.03] {
+                spawn_detail_circle(
+                    parent,
+                    meshes,
+                    materials,
+                    1.3,
+                    -width * 0.44,
+                    y,
+                    0.13,
+                    Color::srgb(0.06, 0.16, 0.18),
+                );
+            }
+            spawn_detail_rect(
+                parent,
+                meshes,
+                materials,
+                width * 0.06,
+                height * 0.14,
+                center.x,
+                height * 0.33,
+                0.09,
+                Color::srgb(0.16, 0.38, 0.42),
+            );
+            spawn_detail_rect(
+                parent,
+                meshes,
+                materials,
+                width * 0.12,
+                height * 0.035,
+                center.x,
+                height * 0.42,
+                0.11,
+                Color::srgb(0.32, 0.64, 0.66),
+            );
+            spawn_detail_ring(
+                parent,
+                meshes,
+                materials,
+                radius + 1.2,
+                radius + 4.0,
+                center.x,
+                center.y,
+                0.1,
+                Color::srgb(0.24, 0.52, 0.55),
+            );
+            spawn_detail_circle(
+                parent,
+                meshes,
+                materials,
+                radius + 1.0,
+                center.x,
+                center.y,
+                0.105,
+                inner_color,
+            );
+            spawn_fan_rotor(parent, meshes, materials, center, radius, rotors);
+            spawn_detail_circle(
+                parent,
+                meshes,
+                materials,
+                4.5,
+                center.x + radius * 0.8,
+                height * 0.3,
+                0.16,
+                Color::srgb(0.62, 0.78, 0.78),
+            );
+            spawn_detail_rect_rot(
+                parent,
+                meshes,
+                materials,
+                1.4,
+                7.0,
+                center.x + radius * 0.8,
+                height * 0.3,
+                0.17,
+                Color::srgb(0.12, 0.32, 0.35),
+                -0.55,
+            );
         }
         EquipmentKind::Ahu => {
             let radius = (height * 0.18).clamp(18.0, 28.0);
-            for x in [-width * 0.23, width * 0.23] {
-                let center = Vec2::new(x, 8.0);
-                parent.spawn((
-                    Mesh2d(meshes.add(Circle::new(radius))),
-                    MeshMaterial2d(color_material(materials, inner_color)),
-                    Transform::from_xyz(center.x, center.y, 0.1),
-                ));
-                spawn_fan_rotor(parent, meshes, materials, center, radius, rotors);
+            let fan_y = height * 0.06;
+            spawn_detail_rect(
+                parent,
+                meshes,
+                materials,
+                width * 0.96,
+                height * 0.045,
+                0.0,
+                height * 0.42,
+                0.06,
+                Color::srgb(0.06, 0.15, 0.17),
+            );
+            spawn_detail_rect(
+                parent,
+                meshes,
+                materials,
+                width * 0.96,
+                height * 0.03,
+                0.0,
+                -height * 0.32,
+                0.06,
+                Color::srgb(0.06, 0.15, 0.17),
+            );
+            for x in [-width * 0.38, width * 0.38] {
+                spawn_detail_rect(
+                    parent,
+                    meshes,
+                    materials,
+                    1.6,
+                    height * 0.48,
+                    x,
+                    height * 0.07,
+                    0.07,
+                    Color::srgb(0.13, 0.31, 0.34),
+                );
             }
-            parent.spawn((
-                Mesh2d(meshes.add(Rectangle::new(1.0, height * 0.55))),
-                MeshMaterial2d(color_material(materials, stroke_color)),
-                Transform::from_xyz(0.0, 6.0, 0.12),
-            ));
+            spawn_detail_rect(
+                parent,
+                meshes,
+                materials,
+                1.6,
+                height * 0.55,
+                0.0,
+                6.0,
+                0.12,
+                stroke_color,
+            );
+            for x in [-width * 0.23, width * 0.23] {
+                let center = Vec2::new(x, fan_y);
+                spawn_detail_ring(
+                    parent,
+                    meshes,
+                    materials,
+                    radius + 1.5,
+                    radius + 4.5,
+                    center.x,
+                    center.y,
+                    0.1,
+                    Color::srgb(0.24, 0.52, 0.55),
+                );
+                spawn_detail_circle(
+                    parent,
+                    meshes,
+                    materials,
+                    radius + 1.2,
+                    center.x,
+                    center.y,
+                    0.105,
+                    inner_color,
+                );
+                spawn_fan_rotor(parent, meshes, materials, center, radius, rotors);
+                for (sx, sy) in [(-1.0_f32, 1.0_f32), (1.0, 1.0), (-1.0, -1.0), (1.0, -1.0)] {
+                    spawn_detail_circle(
+                        parent,
+                        meshes,
+                        materials,
+                        1.6,
+                        center.x + sx * (radius + 7.0),
+                        center.y + sy * (radius + 7.0),
+                        0.12,
+                        Color::srgb(0.32, 0.64, 0.66),
+                    );
+                }
+            }
+            spawn_detail_rect(
+                parent,
+                meshes,
+                materials,
+                width * 0.44,
+                height * 0.17,
+                0.0,
+                -height * 0.245,
+                0.08,
+                Color::srgb(0.04, 0.11, 0.13),
+            );
+            for index in 0..5 {
+                spawn_detail_rect(
+                    parent,
+                    meshes,
+                    materials,
+                    width * 0.4,
+                    height * 0.012,
+                    0.0,
+                    -height * 0.295 + index as f32 * height * 0.026,
+                    0.1,
+                    Color::srgb(0.2, 0.48, 0.51),
+                );
+            }
+            for (sx, side) in [(-1.0_f32, -1.0_f32), (1.0, 1.0)] {
+                spawn_detail_rect(
+                    parent,
+                    meshes,
+                    materials,
+                    width * 0.15,
+                    height * 0.17,
+                    sx * width * 0.33,
+                    -height * 0.245,
+                    0.08,
+                    Color::srgb(0.07, 0.18, 0.2),
+                );
+                spawn_detail_rect(
+                    parent,
+                    meshes,
+                    materials,
+                    width * 0.018,
+                    height * 0.04,
+                    sx * width * 0.33 + side * width * 0.045,
+                    -height * 0.245,
+                    0.1,
+                    Color::srgb(0.38, 0.72, 0.74),
+                );
+            }
+            for x in [-width * 0.3, width * 0.3] {
+                spawn_detail_rect(
+                    parent,
+                    meshes,
+                    materials,
+                    width * 0.14,
+                    height * 0.045,
+                    x,
+                    height * 0.465,
+                    0.08,
+                    Color::srgb(0.15, 0.35, 0.39),
+                );
+                spawn_detail_rect(
+                    parent,
+                    meshes,
+                    materials,
+                    width * 0.1,
+                    height * 0.018,
+                    x,
+                    height * 0.465,
+                    0.1,
+                    Color::srgb(0.04, 0.11, 0.13),
+                );
+            }
+            spawn_detail_rect(
+                parent,
+                meshes,
+                materials,
+                width * 0.16,
+                height * 0.115,
+                width * 0.36,
+                height * 0.255,
+                0.09,
+                Color::srgb(0.035, 0.095, 0.115),
+            );
+            spawn_detail_rect(
+                parent,
+                meshes,
+                materials,
+                width * 0.11,
+                height * 0.045,
+                width * 0.36,
+                height * 0.285,
+                0.11,
+                Color::srgb(0.13, 0.43, 0.46),
+            );
+            for (index, color) in [
+                Color::srgb(0.2, 0.92, 0.8),
+                Color::srgb(0.94, 0.68, 0.2),
+                Color::srgb(0.26, 0.72, 0.95),
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                spawn_detail_circle(
+                    parent,
+                    meshes,
+                    materials,
+                    (height * 0.008).clamp(1.5, 2.4),
+                    width * 0.32 + index as f32 * width * 0.04,
+                    height * 0.225,
+                    0.12,
+                    color,
+                );
+            }
         }
         EquipmentKind::Valve => {
-            let size = (width.min(height) * 0.52).clamp(24.0, 44.0);
-            parent.spawn((
-                Mesh2d(meshes.add(Rectangle::new(size, size))),
-                MeshMaterial2d(color_material(materials, Color::srgb(0.1, 0.31, 0.34))),
-                Transform::from_xyz(0.0, 8.0, 0.12)
-                    .with_rotation(Quat::from_rotation_z(std::f32::consts::FRAC_PI_4)),
-            ));
-            parent.spawn((
-                Mesh2d(meshes.add(Rectangle::new(width * 0.7, 2.0))),
-                MeshMaterial2d(color_material(materials, Color::srgb(0.34, 0.67, 0.69))),
-                Transform::from_xyz(0.0, 8.0, 0.15),
-            ));
+            let size = (height * 0.36).clamp(22.0, 40.0);
+            let center_y = height * 0.02;
+            spawn_detail_rect(
+                parent,
+                meshes,
+                materials,
+                width * 0.34,
+                height * 0.1,
+                -width * 0.3,
+                center_y,
+                0.08,
+                Color::srgb(0.16, 0.38, 0.42),
+            );
+            spawn_detail_rect(
+                parent,
+                meshes,
+                materials,
+                width * 0.34,
+                height * 0.1,
+                width * 0.3,
+                center_y,
+                0.08,
+                Color::srgb(0.16, 0.38, 0.42),
+            );
+            for x in [-width * 0.44, width * 0.44] {
+                spawn_detail_rect(
+                    parent,
+                    meshes,
+                    materials,
+                    width * 0.055,
+                    height * 0.2,
+                    x,
+                    center_y,
+                    0.11,
+                    Color::srgb(0.32, 0.64, 0.66),
+                );
+                for y in [center_y + height * 0.065, center_y - height * 0.065] {
+                    spawn_detail_circle(
+                        parent,
+                        meshes,
+                        materials,
+                        1.2,
+                        x,
+                        y,
+                        0.13,
+                        Color::srgb(0.06, 0.16, 0.18),
+                    );
+                }
+            }
+            spawn_detail_rect_rot(
+                parent,
+                meshes,
+                materials,
+                size,
+                size,
+                0.0,
+                center_y,
+                0.12,
+                Color::srgb(0.1, 0.31, 0.34),
+                std::f32::consts::FRAC_PI_4,
+            );
+            spawn_detail_rect_rot(
+                parent,
+                meshes,
+                materials,
+                size * 0.56,
+                size * 0.56,
+                0.0,
+                center_y,
+                0.135,
+                Color::srgb(0.14, 0.4, 0.43),
+                std::f32::consts::FRAC_PI_4,
+            );
+            spawn_detail_rect(
+                parent,
+                meshes,
+                materials,
+                width * 0.03,
+                height * 0.16,
+                0.0,
+                center_y + size * 0.55,
+                0.14,
+                Color::srgb(0.32, 0.64, 0.66),
+            );
+            let wheel_center = Vec2::new(0.0, center_y + size * 0.55 + height * 0.1);
+            spawn_detail_ring(
+                parent,
+                meshes,
+                materials,
+                (width * 0.045).max(3.8),
+                (width * 0.075).max(6.4),
+                wheel_center.x,
+                wheel_center.y,
+                0.16,
+                Color::srgb(0.34, 0.82, 0.8),
+            );
+            for angle in [0.0_f32, 1.047, 2.094] {
+                spawn_detail_rect_rot(
+                    parent,
+                    meshes,
+                    materials,
+                    (width * 0.15).max(12.0),
+                    1.6,
+                    wheel_center.x,
+                    wheel_center.y,
+                    0.155,
+                    Color::srgb(0.24, 0.62, 0.64),
+                    angle,
+                );
+            }
+            spawn_detail_circle(
+                parent,
+                meshes,
+                materials,
+                2.2,
+                wheel_center.x,
+                wheel_center.y,
+                0.17,
+                Color::srgb(0.37, 0.84, 0.8),
+            );
         }
         EquipmentKind::Chiller => {
             let center_y = height * 0.06;
@@ -1019,6 +1590,45 @@ fn spawn_detail_circle(
         Mesh2d(meshes.add(Circle::new(radius))),
         MeshMaterial2d(color_material(materials, color)),
         Transform::from_xyz(x, y, z),
+    ));
+}
+
+#[allow(clippy::too_many_arguments)]
+fn spawn_detail_ring(
+    parent: &mut ChildSpawnerCommands,
+    meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<ColorMaterial>,
+    inner_radius: f32,
+    outer_radius: f32,
+    x: f32,
+    y: f32,
+    z: f32,
+    color: Color,
+) {
+    parent.spawn((
+        Mesh2d(meshes.add(Annulus::new(inner_radius, outer_radius))),
+        MeshMaterial2d(color_material(materials, color)),
+        Transform::from_xyz(x, y, z),
+    ));
+}
+
+#[allow(clippy::too_many_arguments)]
+fn spawn_detail_rect_rot(
+    parent: &mut ChildSpawnerCommands,
+    meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<ColorMaterial>,
+    width: f32,
+    height: f32,
+    x: f32,
+    y: f32,
+    z: f32,
+    color: Color,
+    rotation: f32,
+) {
+    parent.spawn((
+        Mesh2d(meshes.add(Rectangle::new(width, height))),
+        MeshMaterial2d(color_material(materials, color)),
+        Transform::from_xyz(x, y, z).with_rotation(Quat::from_rotation_z(rotation)),
     ));
 }
 

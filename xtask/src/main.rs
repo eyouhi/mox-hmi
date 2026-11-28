@@ -149,7 +149,7 @@ fn bundle(args: Vec<String>) -> Result<(), String> {
     if !args.is_empty() {
         return Err("cargo x bundle 不接受额外参数".to_string());
     }
-    ensure_tool("hdiutil")?;
+    ensure_tool("diskutil")?;
 
     let source_app = build_macos_app()?;
 
@@ -199,21 +199,21 @@ fn bundle(args: Vec<String>) -> Result<(), String> {
 
     let dmg = dist.join(format!("{APP_NAME}.dmg"));
     println!("生成 DMG: {}", dmg.display());
-    let status = Command::new("hdiutil")
+    let status = Command::new("diskutil")
         .args([
+            "image",
             "create",
-            "-volname",
-            APP_NAME,
-            "-srcfolder",
-            staging.to_string_lossy().as_ref(),
-            "-ov",
-            "-format",
+            "from",
+            "--format",
             "UDZO",
+            "--volumeName",
+            APP_NAME,
+            staging.to_string_lossy().as_ref(),
             dmg.to_string_lossy().as_ref(),
         ])
         .status()
-        .map_err(|error| format!("无法启动 hdiutil: {error}"))?;
-    exit_on_failure(status, "hdiutil")?;
+        .map_err(|error| format!("无法启动 diskutil: {error}"))?;
+    exit_on_failure(status, "diskutil")?;
 
     println!();
     println!("Bundle 输出:");

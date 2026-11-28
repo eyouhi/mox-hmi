@@ -115,6 +115,7 @@ impl Plugin for HmiScenePlugin {
                         super::input::pulse_gamepad_rumble,
                         super::two_d_edit::draw_two_d_overlay,
                         super::three_d_edit::draw_three_d_marquee,
+                        super::three_d_edit::draw_three_d_ground_grid,
                         super::three_d_edit::draw_three_d_hover,
                         super::three_d_edit::draw_three_d_alignment,
                         super::delete_fx::start_delete_fx,
