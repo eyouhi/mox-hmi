@@ -32,6 +32,14 @@ pub enum WorkspaceMode {
     Run,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum CameraCommand {
+    View2d { center: [f32; 2], zoom: f32 },
+    Focus2d,
+    View3d { focus: [f32; 3] },
+    Focus3d,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SaveStatus {
     Saved,
@@ -292,6 +300,8 @@ pub static SAVE_STATUS: GlobalSignal<SaveStatus> = Signal::global(|| SaveStatus:
 pub static VIEW_LABELS_3D: GlobalSignal<Vec<SceneLabel3D>> = Signal::global(Vec::new);
 pub static AXIS_GIZMO_3D: GlobalSignal<Option<AxisGizmo3D>> = Signal::global(|| None);
 pub static CAMERA_RESET_REVISION: GlobalSignal<u32> = Signal::global(|| 0);
+pub static CAMERA_COMMAND: GlobalSignal<Option<CameraCommand>> = Signal::global(|| None);
+pub static CAMERA_COMMAND_REVISION: GlobalSignal<u64> = Signal::global(|| 0);
 pub static WEBGPU_READY: GlobalSignal<Option<bool>> = Signal::global(|| None);
 pub static FIELD_ERROR_ANNOUNCEMENT: GlobalSignal<Option<String>> = Signal::global(|| None);
 pub static RUNTIME_ONLY: GlobalSignal<bool> = Signal::global(|| false);
@@ -1340,6 +1350,16 @@ pub fn write_tag(tag_id: &str, value: TagValue) -> Result<(), HmiError> {
     result
 }
 
+pub fn resume_tag(tag_id: &str) -> Result<(), HmiError> {
+    if remote_runner_active() {
+        return Err(HmiError::InvalidCommand(
+            "运行器实时连接不支持恢复 Tag 仿真".to_string(),
+        ));
+    }
+    with_session(|session| session.resume_tag_simulation(tag_id))
+        .map_err(HmiError::InvalidCommand)?
+}
+
 pub fn invoke_button_action(action: &ButtonAction) -> Result<(), HmiError> {
     match action {
         ButtonAction::ToggleTag { tag_id } => {
@@ -1471,6 +1491,34 @@ pub fn set_view_focus_3d(focus: [f32; 3]) {
 
 pub fn set_zoom_2d(zoom: f32) {
     ZOOM_2D.with(|cell| cell.set(zoom));
+}
+
+pub fn request_camera_view_2d(center: [f32; 2], zoom: f32) {
+    *CAMERA_COMMAND.write() = Some(CameraCommand::View2d { center, zoom });
+    *CAMERA_COMMAND_REVISION.write() += 1;
+}
+
+pub fn request_camera_focus_2d() {
+    *CAMERA_COMMAND.write() = Some(CameraCommand::Focus2d);
+    *CAMERA_COMMAND_REVISION.write() += 1;
+}
+
+pub fn request_camera_view_3d(focus: [f32; 3]) {
+    *CAMERA_COMMAND.write() = Some(CameraCommand::View3d { focus });
+    *CAMERA_COMMAND_REVISION.write() += 1;
+}
+
+pub fn request_camera_focus_3d() {
+    *CAMERA_COMMAND.write() = Some(CameraCommand::Focus3d);
+    *CAMERA_COMMAND_REVISION.write() += 1;
+}
+
+pub fn camera_command_revision() -> u64 {
+    *CAMERA_COMMAND_REVISION.read()
+}
+
+pub fn camera_command() -> Option<CameraCommand> {
+    *CAMERA_COMMAND.read()
 }
 
 pub fn camera_reset_revision() -> u32 {

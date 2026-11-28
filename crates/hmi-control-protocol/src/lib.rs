@@ -55,6 +55,8 @@ pub struct ControlState {
     pub tag_revision: u64,
     pub active_screen: Option<String>,
     pub selected_node: Option<String>,
+    #[serde(default)]
+    pub selected_nodes: Vec<String>,
     pub mode: String,
     pub can_undo: bool,
     pub can_redo: bool,

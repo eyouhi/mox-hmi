@@ -285,12 +285,27 @@ http://127.0.0.1:8088/?control=ws://127.0.0.1:17880/control&control_token=change
 
 ### MCP 工具
 
-- `mox_hmi_status`：查看浏览器连接状态、当前画面、选择、模式和修订号。
-- `mox_hmi_list_commands`：列出控制动作与 `EditorCommand` 类型。
-- `mox_hmi_inspect_project`：读取完整工程或指定画面。
-- `mox_hmi_execute_command`：执行选择、切换模式、编辑节点、写 Tag、撤销/重做、保存等动作。
+读取与查询：
 
-支持的主要动作：`select_screen`、`select_node`、`set_mode`、`execute_editor_command`、`write_tag`、`undo`、`redo`、`save`、`reset_camera_3d`。
+- `mox_hmi_status`：查看浏览器连接状态、当前画面、多选状态、模式和修订号。
+- `mox_hmi_list_commands`：列出全部控制动作、查询工具、`EditorCommand` 类型和命令结构示例。
+- `mox_hmi_inspect_project`：读取完整工程或指定画面。
+- `mox_hmi_list_tags`：列出 Tag 定义和当前仿真值，可按 id、名称或单位搜索。
+- `mox_hmi_get_node`：按 `node_id` 读取单个 2D/3D 节点。
+- `mox_hmi_search_nodes`：跨画面按 id、名称或控件内容搜索节点。
+- `mox_hmi_validate_project`：运行工程校验并返回可定位的问题列表。
+- `mox_hmi_export_project`：导出规范 JSON 和下载文件名，便于备份或外部比对。
+- `mox_hmi_capture_preview`：返回当前画布 PNG；原生编辑器从 Bevy 纹理回读，Web 端从 canvas 截图。
+
+执行与编辑：
+
+- `mox_hmi_execute_command`：通过统一动作入口修改工程或运行态；每一步都会进入 AI 操作隧道。
+- 选择：`select_screen`、`select_node`、`select_nodes`、`select_all_nodes`。
+- 编辑：`execute_editor_command`、`execute_editor_commands`（单步撤销的批量命令）、`copy_selection`、`cut_selection`、`paste_clipboard`、`duplicate_selection`、`delete_selection`、`import_project`。
+- 运行态：`set_mode`、`read_tag`、`read_tags`、`write_tag`、`invoke_button`、`tick_tags`、`resume_tag`。
+- 视图与历史：`set_view_2d`、`set_view_3d`、`align_selected_3d`、`focus_selection`、`reset_camera_3d`、`undo`、`redo`、`save`。
+
+工程查询结果标记为不可信内容，只有 `mox_hmi_execute_command` 标记为有实际后果的写操作。MCP 还提供 `mox-hmi://status`、`mox-hmi://project`、`mox-hmi://commands` 资源和 `mox_hmi_review` 审查提示词，支持资源和提示词的客户端可以直接加载。
 
 ### WebMCP（Web 运行器可选增强）
 
@@ -310,8 +325,10 @@ await document.modelContext.getTools()
 
 注册的工具与 MCP 一致：
 
-- `mox_hmi_status`、`mox_hmi_list_commands`、`mox_hmi_inspect_project` 标记为只读；工程读取结果标记为不可信内容。
+- 查询工具 `mox_hmi_status`、`mox_hmi_list_commands`、`mox_hmi_inspect_project`、`mox_hmi_list_tags`、`mox_hmi_get_node`、`mox_hmi_search_nodes`、`mox_hmi_validate_project`、`mox_hmi_export_project`、`mox_hmi_capture_preview` 标记为只读；工程读取结果标记为不可信内容。
 - `mox_hmi_execute_command` 标记为有实际后果的操作，浏览器或智能体可据此要求用户确认。
+
+WebMCP 只暴露 tools，不提供 MCP 的 resources 和 prompts；截图能力依赖当前页面已经渲染出 `bevy-canvas`。
 
 WebMCP 工具调用仍进入 `run_action` → `EditorCommand` → 校验/撤销栈/自动保存这条链路，不会直接修改文件。页面内的操作同样会显示在“AI 操作隧道”面板中。
 

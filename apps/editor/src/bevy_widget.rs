@@ -26,16 +26,122 @@ use dioxus::prelude::*;
 use dioxus_native::{CustomWidgetAttr, DeviceHandle};
 use keyboard_types::{Code, Key, NamedKey};
 use mox_hmi_studio::scene::{CanvasPinch, plugin::NATIVE_TEXTURE_VIEW};
+use mox_hmi_ui::control::PreviewImage;
 use peniko::{
     Fill, ImageBrush, ImageSampler,
     kurbo::{Affine, Rect},
 };
-use std::sync::{Mutex, OnceLock};
 use std::time::Instant;
+use std::{
+    cell::RefCell,
+    sync::{Mutex, OnceLock},
+};
 use wgpu::{Texture, TextureView, TextureViewDescriptor};
 
 static ASSET_PATH: OnceLock<String> = OnceLock::new();
 static PINCH_DELTAS: Mutex<Vec<f32>> = Mutex::new(Vec::new());
+
+struct PreviewCaptureContext {
+    device: wgpu::Device,
+    queue: wgpu::Queue,
+    texture: Texture,
+    width: u32,
+    height: u32,
+}
+
+thread_local! {
+    static PREVIEW_CONTEXT: RefCell<Option<PreviewCaptureContext>> = const { RefCell::new(None) };
+}
+
+pub fn capture_preview() -> std::result::Result<PreviewImage, String> {
+    PREVIEW_CONTEXT.with(|slot| {
+        let context = slot.borrow();
+        let Some(context) = context.as_ref() else {
+            return Err("Bevy 画面尚未就绪".to_string());
+        };
+        context.capture()
+    })
+}
+
+impl PreviewCaptureContext {
+    fn capture(&self) -> std::result::Result<PreviewImage, String> {
+        let width = self.width.max(1);
+        let height = self.height.max(1);
+        let unpadded_bytes_per_row = width * 4;
+        let padded_bytes_per_row = unpadded_bytes_per_row.div_ceil(256) * 256;
+        let buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("mox-bevy-preview-readback"),
+            size: u64::from(padded_bytes_per_row) * u64::from(height),
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("mox-bevy-preview-copy"),
+            });
+        encoder.copy_texture_to_buffer(
+            self.texture.as_image_copy(),
+            wgpu::TexelCopyBufferInfo {
+                buffer: &buffer,
+                layout: wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(padded_bytes_per_row),
+                    rows_per_image: Some(height),
+                },
+            },
+            Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+        );
+        self.queue.submit(Some(encoder.finish()));
+
+        let slice = buffer.slice(..);
+        let (sender, receiver) = std::sync::mpsc::channel();
+        slice.map_async(wgpu::MapMode::Read, move |result| {
+            let _ = sender.send(result);
+        });
+        self.device
+            .poll(wgpu::PollType::Wait {
+                submission_index: None,
+                timeout: None,
+            })
+            .map_err(|error| format!("等待 GPU 回读失败: {error:?}"))?;
+        receiver
+            .recv()
+            .map_err(|_| "等待画面回读失败".to_string())?
+            .map_err(|error| format!("画面回读失败: {error:?}"))?;
+        let view = slice
+            .get_mapped_range()
+            .map_err(|error| format!("读取画面像素失败: {error:?}"))?;
+        let mut pixels = Vec::with_capacity((width * height * 4) as usize);
+        for row in 0..height {
+            let start = (row * padded_bytes_per_row) as usize;
+            pixels.extend_from_slice(&view[start..start + unpadded_bytes_per_row as usize]);
+        }
+        drop(view);
+        buffer.unmap();
+
+        let mut png = Vec::new();
+        {
+            let mut encoder = png::Encoder::new(&mut png, width, height);
+            encoder.set_color(png::ColorType::Rgba);
+            encoder.set_depth(png::BitDepth::Eight);
+            let mut writer = encoder
+                .write_header()
+                .map_err(|error| format!("创建 PNG 编码器失败: {error}"))?;
+            writer
+                .write_image_data(&pixels)
+                .map_err(|error| format!("编码 PNG 失败: {error}"))?;
+            writer
+                .finish()
+                .map_err(|error| format!("完成 PNG 编码失败: {error}"))?;
+        }
+        Ok(PreviewImage { width, height, png })
+    }
+}
 
 pub fn install_asset_path(path: String) {
     let _ = ASSET_PATH.set(path);
@@ -298,7 +404,10 @@ impl Widget for BevyWidget {
             }
             self.texture = Some(runtime.texture.clone());
         }
-        if let Err(error) = runtime.frame() {
+        PREVIEW_CONTEXT.with(|slot| *slot.borrow_mut() = Some(runtime.capture_context()));
+        let frame_result = runtime.frame();
+        PREVIEW_CONTEXT.with(|slot| *slot.borrow_mut() = None);
+        if let Err(error) = frame_result {
             self.fail(error);
             return scene;
         }
@@ -331,6 +440,8 @@ impl Widget for BevyWidget {
 
 struct BevyRuntime {
     sub_apps: SubApps,
+    device: wgpu::Device,
+    queue: wgpu::Queue,
     texture: Texture,
     texture_view: TextureView,
     window_entity: Entity,
@@ -381,6 +492,8 @@ impl BevyRuntime {
         };
         let mut runtime = Self {
             sub_apps,
+            device: handle.device.clone(),
+            queue: handle.queue.clone(),
             texture,
             texture_view,
             window_entity,
@@ -435,8 +548,8 @@ impl BevyRuntime {
     }
 
     fn frame(&mut self) -> std::result::Result<(), String> {
-        self.drain_control();
         self.sub_apps.update();
+        self.drain_control();
         if !self.ready_reported {
             self.ready_reported = true;
             mox_hmi_ui::bridge::mark_engine_ready();
@@ -456,6 +569,16 @@ impl BevyRuntime {
             self.last_state_sync = Instant::now();
         }
         Ok(())
+    }
+
+    fn capture_context(&self) -> PreviewCaptureContext {
+        PreviewCaptureContext {
+            device: self.device.clone(),
+            queue: self.queue.clone(),
+            texture: self.texture.clone(),
+            width: self.size.0,
+            height: self.size.1,
+        }
     }
 
     fn drain_control(&self) {

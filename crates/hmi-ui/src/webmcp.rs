@@ -161,6 +161,12 @@ mod imp {
                 let value = result?;
                 Ok(action_envelope(value, duration_ms))
             }
+            tools::LIST_TAGS_TOOL => tracked("list_tags", "WebMCP 读取 Tag", input),
+            tools::GET_NODE_TOOL => tracked("get_node", "WebMCP 读取节点", input),
+            tools::SEARCH_NODES_TOOL => tracked("search_nodes", "WebMCP 搜索节点", input),
+            tools::VALIDATE_PROJECT_TOOL => tracked("validate_project", "WebMCP 校验工程", input),
+            tools::EXPORT_PROJECT_TOOL => tracked("export_project", "WebMCP 导出工程", input),
+            tools::CAPTURE_PREVIEW_TOOL => tracked("capture_preview", "WebMCP 截取画面", input),
             tools::EXECUTE_COMMAND_TOOL => {
                 let action = input
                     .get("action")
@@ -204,6 +210,12 @@ mod imp {
             "state": crate::control::current_state(),
             "duration_ms": duration_ms,
         })
+    }
+
+    fn tracked(action: &str, label: &str, input: &Value) -> Result<Value, String> {
+        let (result, duration_ms) = crate::control::track_action(action, label, input);
+        let value = result?;
+        Ok(action_envelope(value, duration_ms))
     }
 
     fn input_to_value(input: &JsValue) -> Result<Value, String> {

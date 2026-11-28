@@ -4,6 +4,7 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
+base64 = "0.22"
 hmi-core = { path = "../hmi-core" }
 hmi-control-protocol = { path = "../hmi-control-protocol" }
 dioxus = { version = "=0.8.0-alpha.3", default-features = false, features = [
@@ -29,6 +30,7 @@ web-sys = { version = "0.3", features = [
   "Element",
   "Node",
   "HtmlAnchorElement",
+  "HtmlCanvasElement",
   "HtmlInputElement",
   "Blob",
   "BlobPropertyBag",

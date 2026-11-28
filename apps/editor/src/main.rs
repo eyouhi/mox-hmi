@@ -155,6 +155,7 @@ fn run() -> Result<(), String> {
 
     let assets = asset_path()?;
     bevy_widget::install_asset_path(assets.clone());
+    mox_hmi_ui::control::install_preview_capture(bevy_widget::capture_preview)?;
     mox_hmi_ui::install_native_viewport(bevy_widget::viewport);
     control_native::install(native_control);
 

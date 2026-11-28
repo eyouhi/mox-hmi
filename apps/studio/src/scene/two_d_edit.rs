@@ -62,6 +62,12 @@ pub struct TwoDEditState {
     keyboard_snap_until_s: f64,
 }
 
+#[derive(Default)]
+pub struct CameraSync {
+    reset_revision: u32,
+    command_revision: u64,
+}
+
 #[derive(Debug, Clone)]
 enum DragState {
     Move {
@@ -693,8 +699,15 @@ pub fn two_d_input(
     mut child_transforms: TwoDChildTransformQuery<'_, '_>,
     mut edit_state: ResMut<TwoDEditState>,
     mut camera_state: ResMut<TwoDCameraState>,
-    mut reset_revision: Local<u32>,
+    mut camera_sync: Local<CameraSync>,
 ) {
+    let current_command = crate::bridge::camera_command_revision();
+    let command = if current_command != camera_sync.command_revision {
+        camera_sync.command_revision = current_command;
+        crate::bridge::camera_command()
+    } else {
+        None
+    };
     if !cached.is_two_d() {
         reset_two_d_input(
             &cached,
@@ -716,9 +729,24 @@ pub fn two_d_input(
         return;
     };
     let current_reset = crate::bridge::camera_reset_revision();
-    if current_reset != *reset_revision {
-        *reset_revision = current_reset;
+    if current_reset != camera_sync.reset_revision {
+        camera_sync.reset_revision = current_reset;
         reset_two_d_camera(&mut transform, &mut projection, &mut camera_state);
+    }
+    match command {
+        Some(crate::bridge::CameraCommand::View2d { center, zoom }) => {
+            apply_camera_view_2d(
+                center,
+                zoom,
+                &mut transform,
+                &mut projection,
+                &mut camera_state,
+            );
+        }
+        Some(crate::bridge::CameraCommand::Focus2d) => {
+            frame_selected_2d(nodes, &mut transform, &mut projection, &mut camera_state);
+        }
+        _ => {}
     }
     let cursor = window.cursor_position();
     let pointer_on_canvas = cursor.is_some_and(input::pointer_over_canvas);
@@ -1645,6 +1673,24 @@ fn frame_selected_2d(
     clamp_two_d_camera_view(transform);
 }
 
+fn apply_camera_view_2d(
+    center: [f32; 2],
+    zoom: f32,
+    transform: &mut Transform,
+    projection: &mut Projection,
+    camera_state: &mut TwoDCameraState,
+) {
+    let zoom = zoom.clamp(0.5, 4.0);
+    camera_state.zoom = zoom;
+    if let Projection::Orthographic(orthographic) = projection {
+        orthographic.scale = 1.0 / zoom;
+    }
+    let world = design_to_world(center, DESIGN_SIZE);
+    transform.translation.x = world[0];
+    transform.translation.y = world[1];
+    clamp_two_d_camera_view(transform);
+}
+
 fn reset_two_d_camera(
     transform: &mut Transform,
     projection: &mut Projection,
@@ -2373,7 +2419,7 @@ pub fn publish_view_state(
 #[cfg(test)]
 mod tests {
     use super::{
-        CenterSnapTargets, DragState, TwoDEditState, clamp_two_d_camera_view,
+        CenterSnapTargets, DragState, TwoDEditState, apply_camera_view_2d, clamp_two_d_camera_view,
         drag_activation_reached, fine_nudge_snap, node_local_to_design, normalized_pipe_node,
         reset_two_d_camera, snap_pipe_point, update_pan, wheel_pan_translation,
     };
@@ -2519,6 +2565,29 @@ mod tests {
             panic!("2D camera must use an orthographic projection");
         };
         assert_eq!(orthographic.scale, 1.0);
+    }
+
+    #[test]
+    fn camera_view_command_sets_center_and_zoom() {
+        let mut transform = Transform::default();
+        let mut projection = Projection::Orthographic(OrthographicProjection::default_2d());
+        let mut camera_state = super::TwoDCameraState { zoom: 1.0 };
+
+        apply_camera_view_2d(
+            [500.0, 300.0],
+            2.0,
+            &mut transform,
+            &mut projection,
+            &mut camera_state,
+        );
+
+        assert_eq!(transform.translation.x, -300.0);
+        assert_eq!(transform.translation.y, 150.0);
+        assert_eq!(camera_state.zoom, 2.0);
+        let Projection::Orthographic(orthographic) = projection else {
+            panic!("2D camera must use an orthographic projection");
+        };
+        assert_eq!(orthographic.scale, 0.5);
     }
 
     #[test]

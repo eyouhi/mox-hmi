@@ -6017,6 +6017,7 @@ dependencies = [
  "objc2-foundation 0.3.2",
  "parley 0.12.0",
  "peniko",
+ "png",
  "serde",
  "serde_json",
  "tempfile",
@@ -6053,6 +6054,7 @@ dependencies = [
 name = "mox-hmi-ui"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
  "dioxus",
  "futures-timer",
  "gloo-timers 0.3.0",

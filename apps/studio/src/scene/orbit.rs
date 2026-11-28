@@ -31,6 +31,12 @@ impl Default for OrbitCamera {
     }
 }
 
+#[derive(Default)]
+pub struct CameraSync {
+    reset_revision: u32,
+    command_revision: u64,
+}
+
 impl OrbitCamera {
     pub fn reset(&mut self) {
         *self = Self::default();
@@ -79,8 +85,15 @@ pub fn orbit_system(
     mut pinch_events: MessageReader<CanvasPinch>,
     mut orbit: ResMut<OrbitCamera>,
     mut camera_query: Query<&mut Transform, With<Camera3d>>,
-    mut reset_revision: Local<u32>,
+    mut camera_sync: Local<CameraSync>,
 ) {
+    let current_command = crate::bridge::camera_command_revision();
+    let command = if current_command != camera_sync.command_revision {
+        camera_sync.command_revision = current_command;
+        crate::bridge::camera_command()
+    } else {
+        None
+    };
     if !cached.is_three_d() {
         edit_state.view_orbit = false;
         crate::bridge::set_axis_gizmo_3d(None);
@@ -110,9 +123,17 @@ pub fn orbit_system(
     }
 
     let current_reset = crate::bridge::camera_reset_revision();
-    if current_reset != *reset_revision {
-        *reset_revision = current_reset;
+    if current_reset != camera_sync.reset_revision {
+        camera_sync.reset_revision = current_reset;
         orbit.reset();
+    }
+
+    match command {
+        Some(crate::bridge::CameraCommand::View3d { focus }) => {
+            orbit.focus = Vec3::from_array(focus);
+        }
+        Some(crate::bridge::CameraCommand::Focus3d) => frame_selected(&cached, &mut orbit),
+        _ => {}
     }
 
     if input::keyboard_input_enabled() && !input::command_modifier_pressed(&keyboard) {
