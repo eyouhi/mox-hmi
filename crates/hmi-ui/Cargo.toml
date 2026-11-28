@@ -4,10 +4,10 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
-base64 = "0.22"
+base64 = "0.23"
 hmi-core = { path = "../hmi-core" }
 hmi-control-protocol = { path = "../hmi-control-protocol" }
-dioxus = { version = "=0.8.0-alpha.3", default-features = false, features = [
+dioxus = { version = "=0.8.0-alpha.4", default-features = false, features = [
   "minimal",
   "asset",
   "document",
@@ -40,7 +40,7 @@ web-sys = { version = "0.3", features = [
 js-sys = "0.3"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-gloo-timers = { version = "0.3", features = ["futures"] }
+gloo-timers = { version = "0.4", features = ["futures"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 futures-timer = "3"

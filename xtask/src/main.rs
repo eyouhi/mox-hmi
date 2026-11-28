@@ -771,7 +771,7 @@ fn ensure_dx() -> Result<(), String> {
             return Err(format!("dx 不可用: {}", details.trim()));
         }
         Err(error) if error.kind() == ErrorKind::NotFound => {
-            return Err("未找到 dx。请安装与本项目匹配的 Dioxus CLI 0.8：\n  cargo install dioxus-cli --version 0.8.0-alpha.3 --locked --force".to_string());
+            return Err("未找到 dx。请安装与本项目匹配的 Dioxus CLI 0.8：\n  cargo install dioxus-cli --version 0.8.0-alpha.4 --locked --force".to_string());
         }
         Err(error) => return Err(format!("无法执行 dx: {error}")),
     };
@@ -787,7 +787,7 @@ fn ensure_dx() -> Result<(), String> {
         return Ok(());
     }
     Err(format!(
-        "dx 版本不匹配：{}。Runner 使用 Dioxus 0.8，请运行：\n  cargo install dioxus-cli --version 0.8.0-alpha.3 --locked --force",
+        "dx 版本不匹配：{}。Runner 使用 Dioxus 0.8，请运行：\n  cargo install dioxus-cli --version 0.8.0-alpha.4 --locked --force",
         version.trim()
     ))
 }

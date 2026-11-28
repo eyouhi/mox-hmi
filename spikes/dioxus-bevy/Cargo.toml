@@ -3,10 +3,12 @@ name = "mox-spike-dioxus-bevy"
 version = "0.1.0"
 edition = "2024"
 
+[workspace]
+
 [dependencies]
 bevy = { version = "0.20.1", features = ["webgpu"] }
-dioxus = { version = "0.7.10", features = [] }
-dioxus-logger = "0.7.10"
+dioxus = { version = "=0.8.0-alpha.4", features = [] }
+dioxus-logger = "=0.8.0-alpha.4"
 console_error_panic_hook = "0.1"
 tracing = "0.1"
 wasm-bindgen-futures = "0.4"

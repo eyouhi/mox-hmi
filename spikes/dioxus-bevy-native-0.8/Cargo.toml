@@ -7,7 +7,7 @@ publish = false
 [workspace]
 
 [dependencies]
-anyrender = "0.14.0"
+anyrender = "0.15.1"
 bevy = { version = "0.20.1", default-features = false, features = [
   "std",
   "async_executor",
@@ -29,10 +29,10 @@ bevy = { version = "0.20.1", default-features = false, features = [
   "bevy_gizmos_render",
   "png",
 ] }
-blitz-dom = { version = "=0.3.0-beta.4", features = ["custom-widget"] }
-blitz-traits = "=0.3.0-beta.4"
-dioxus = "=0.8.0-alpha.3"
-dioxus-native = { version = "=0.8.0-alpha.3", default-features = false, features = [
+blitz-dom = { version = "=0.3.0-beta.6", features = ["custom-widget"] }
+blitz-traits = "=0.3.0-beta.6"
+dioxus = "=0.8.0-alpha.4"
+dioxus-native = { version = "=0.8.0-alpha.4", default-features = false, features = [
   "accessibility",
   "svg",
   "system-fonts",

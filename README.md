@@ -31,8 +31,8 @@
 
 - Rust nightly（Edition 2024），开发构建启用并行前端与泛型共享。
 - Bevy `0.20.1`，`webgpu`、2D/3D PBR、`bevy_picking`、GLB。
-- 编辑器：Dioxus Native `0.8.0-alpha.3` + Blitz，Bevy `0.20.1` 通过共享 wgpu 设备渲染到原生纹理。
-- 运行器：Dioxus Fullstack `0.8.0-alpha.3` + Bevy WebGPU；WASM 客户端、Axum 服务端、Server Functions 与 SSE。
+- 编辑器：Dioxus Native `0.8.0-alpha.4` + Blitz，Bevy `0.20.1` 通过共享 wgpu 设备渲染到原生纹理。
+- 运行器：Dioxus Fullstack `0.8.0-alpha.4` + Bevy WebGPU；WASM 客户端、Axum 服务端、Server Functions 与 SSE。
 - `winit` 原生窗口、`wasm32-unknown-unknown` + `wasm-bindgen`。
 
 ### 目录与职责
@@ -57,7 +57,7 @@ spikes/            历史技术验证，仅作参考，不参与生产构建
 前置：
 
 ```bash
-cargo install dioxus-cli --version 0.8.0-alpha.3 --locked --force
+cargo install dioxus-cli --version 0.8.0-alpha.4 --locked --force
 ```
 
 工具链由 `rust-toolchain.toml` 固定为 nightly，并自动安装 `wasm32-unknown-unknown`。`.cargo/config.toml` 启用 nightly 并行前端（`-Zthreads=8`）和跨 crate 泛型共享（`-Zshare-generics=yes`）。日常调试的 dev profile 只保留行号调试信息，第三方依赖使用 `opt-level=1`，避免 Bevy 全量优化拖慢增量编译；release 打包仍使用体积优化。

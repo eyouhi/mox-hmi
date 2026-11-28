@@ -25,15 +25,15 @@ bevy = { version = "0.20.1", default-features = false, features = [
   "bevy_gizmos_render",
   "png",
 ] }
-anyrender = "0.14.0"
-blitz-dom = { version = "=0.3.0-beta.4", features = ["custom-widget"] }
-blitz-traits = "=0.3.0-beta.4"
-dioxus = { version = "=0.8.0-alpha.3", default-features = false, features = [
+anyrender = "0.15.1"
+blitz-dom = { version = "=0.3.0-beta.6", features = ["custom-widget"] }
+blitz-traits = "=0.3.0-beta.6"
+dioxus = { version = "=0.8.0-alpha.4", default-features = false, features = [
   "minimal",
   "asset",
   "document",
 ] }
-dioxus-native = { version = "=0.8.0-alpha.3", default-features = false, features = [
+dioxus-native = { version = "=0.8.0-alpha.4", default-features = false, features = [
   "accessibility",
   "svg",
   "system-fonts",
@@ -47,7 +47,7 @@ mox-hmi-studio = { path = "../studio", features = ["scene"] }
 mox-hmi-ui = { path = "../../crates/hmi-ui" }
 peniko = "0.6.1"
 png = "0.18"
-parley = { version = "0.12", features = ["system"] }
+parley = { version = "0.13", features = ["system"] }
 serde.workspace = true
 serde_json.workspace = true
 tokio = { version = "1", features = ["net", "rt-multi-thread", "sync", "time"] }

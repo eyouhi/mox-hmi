@@ -1,30 +1,25 @@
-use anyrender::{PaintRef, PaintScene, RenderContext};
+use anyrender::{AntiAliasing, PaintRef, PaintScene, RenderContext};
 use bevy::{
     app::SubApps,
     asset::RenderAssetUsages,
     camera::RenderTarget,
     prelude::*,
     render::{
+        RenderPlugin,
         render_resource::{Extent3d, TextureDimension, TextureFormat, TextureUsages},
-        renderer::{
-            RenderAdapter, RenderAdapterInfo, RenderDevice, RenderInstance, RenderQueue,
-        },
+        renderer::{RenderAdapter, RenderAdapterInfo, RenderDevice, RenderInstance, RenderQueue},
         settings::RenderCreation,
         texture::ManualTextureView,
-        RenderPlugin,
     },
     window::ExitCondition,
     winit::WinitPlugin,
 };
-use blitz_dom::{
-    node::ComputedStyles,
-    Widget,
-};
+use blitz_dom::{Widget, node::ComputedStyles};
 use dioxus::prelude::*;
 use dioxus_native::{CustomWidgetAttr, DeviceHandle};
 use peniko::{
-    kurbo::{Affine, Rect},
     Fill, ImageBrush, ImageSampler,
+    kurbo::{Affine, Rect},
 };
 use std::{sync::mpsc, time::Instant};
 use wgpu::{Texture, TextureView, TextureViewDescriptor};
@@ -155,6 +150,7 @@ impl Widget for BevyWidget {
                 }),
                 None,
                 &Rect::from_origin_size((0.0, 0.0), (width as f64, height as f64)),
+                AntiAliasing::Enabled,
             );
         }
         scene

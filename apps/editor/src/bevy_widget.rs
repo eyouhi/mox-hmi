@@ -1,4 +1,4 @@
-use anyrender::{PaintRef, PaintScene, RenderContext};
+use anyrender::{AntiAliasing, PaintRef, PaintScene, RenderContext};
 use bevy::{
     app::SubApps,
     input::{
@@ -373,7 +373,11 @@ impl Widget for BevyWidget {
             UiEvent::KeyDown(key) => self.key(key),
             UiEvent::KeyUp(key) => self.key(key),
             UiEvent::AppleStandardKeybinding(action) => self.apple_keybinding(action),
-            UiEvent::Ime(_) => {}
+            UiEvent::Ime(_)
+            | UiEvent::Paste(_)
+            | UiEvent::DragOver(_)
+            | UiEvent::DragLeave(_)
+            | UiEvent::Drop(_) => {}
         }
     }
 
@@ -424,6 +428,7 @@ impl Widget for BevyWidget {
                 }),
                 None,
                 &Rect::from_origin_size((0.0, 0.0), (width as f64, height as f64)),
+                AntiAliasing::Enabled,
             );
         }
         scene

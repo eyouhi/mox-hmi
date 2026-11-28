@@ -46,8 +46,8 @@ bevy = { version = "0.20.1", default-features = false, features = [
   "bevy_gizmos_render",
   "png",
 ], optional = true }
-dioxus-cli-config = { version = "=0.8.0-alpha.3", optional = true }
-dioxus = { version = "=0.8.0-alpha.3", default-features = false, features = [
+dioxus-cli-config = { version = "=0.8.0-alpha.4", optional = true }
+dioxus = { version = "=0.8.0-alpha.4", default-features = false, features = [
   "minimal",
   "fullstack",
   "asset",

@@ -277,7 +277,10 @@ fn sync_selection(
     }
 }
 
-fn handle_camera_command(mut last_command: Local<u32>, mut camera: Query<&mut Transform, With<Camera3d>>) {
+fn handle_camera_command(
+    mut last_command: Local<u32>,
+    mut camera: Query<&mut Transform, With<Camera3d>>,
+) {
     let command = *CAMERA_COMMAND.read();
     if command == *last_command {
         return;
